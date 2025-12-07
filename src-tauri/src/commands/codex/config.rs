@@ -468,6 +468,54 @@ pub async fn clear_custom_codex_path(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate a Codex CLI path without saving it
+/// Returns true if the path is a valid Codex CLI executable
+#[tauri::command]
+pub async fn validate_codex_path_cmd(path: String) -> Result<bool, String> {
+    log::info!("[Codex] Validating path: {}", path);
+
+    // Expand ~ and relative paths
+    let expanded_path = expand_user_path(&path)?;
+
+    // Check if file exists
+    if !expanded_path.exists() {
+        log::warn!("[Codex] Path does not exist: {:?}", expanded_path);
+        return Ok(false);
+    }
+
+    // Check if it's a file (not a directory)
+    if !expanded_path.is_file() {
+        log::warn!("[Codex] Path is not a file: {:?}", expanded_path);
+        return Ok(false);
+    }
+
+    let path_str = expanded_path
+        .to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())?
+        .to_string();
+
+    // Test if it's actually Codex CLI by running --version
+    let mut cmd = Command::new(&path_str);
+    cmd.arg("--version");
+    apply_no_window_async(&mut cmd);
+
+    match cmd.output().await {
+        Ok(output) => {
+            if output.status.success() {
+                log::info!("[Codex] Path validated successfully: {}", path_str);
+                Ok(true)
+            } else {
+                log::warn!("[Codex] Path is not a valid Codex CLI: {} (exit code: {:?})", path_str, output.status.code());
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            log::warn!("[Codex] Failed to execute path: {} - {}", path_str, e);
+            Ok(false)
+        }
+    }
+}
+
 // ============================================================================
 // Shell Path Utilities (macOS)
 // ============================================================================

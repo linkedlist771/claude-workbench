@@ -220,112 +220,141 @@ export const TabManager: React.FC<TabManagerProps> = ({
               className="flex-1 flex items-center gap-2 overflow-x-auto scrollbar-thin"
             >
               <AnimatePresence mode="popLayout">
-                {tabs.map((tab, index) => (
-                  <Tooltip key={tab.id}>
-                    <TooltipTrigger asChild>
-                      <motion.div
-                        layout
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                        className={cn(
-                          "group relative flex items-center gap-2 px-3 py-1.5 rounded-lg min-w-[100px] max-w-[200px] flex-shrink-0 cursor-pointer",
-                          "transition-colors",
-                          tab.isActive
-                            ? "bg-muted border border-border text-foreground"
-                            : "bg-transparent border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                          draggedTab === tab.id && "ring-2 ring-primary",
-                          dragOverIndex === index && draggedTab !== tab.id && "border-primary"
-                        )}
-                        onClick={() => switchToTab(tab.id)}
-                        draggable
-                        onDragStart={() => handleTabDragStart(tab.id)}
-                        onDragEnd={handleTabDragEnd}
-                        onDragOver={(e) => handleTabDragOver(e, index)}
-                        onDrop={(e) => handleTabDrop(e, index)}
-                      >
-                        {/* 会话状态指示器 - 极简 */}
-                        <div className="flex-shrink-0">
-                          {tab.state === 'streaming' ? (
-                            <motion.div
-                              animate={{ opacity: [1, 0.4, 1] }}
-                              transition={{ duration: 1.5, repeat: Infinity }}
-                              className="h-1.5 w-1.5 bg-success rounded-full"
-                            />
-                          ) : tab.hasUnsavedChanges ? (
-                            <div className="h-1.5 w-1.5 bg-warning rounded-full" />
-                          ) : null}
-                        </div>
+                {tabs.map((tab, index) => {
+                  // Engine-based color styles - always show color, darker when active
+                  // Light mode: lighter backgrounds with colored borders
+                  // Dark mode: subtle colored backgrounds with brighter borders
+                  const getEngineColorClasses = () => {
+                    const engine = tab.engine || tab.session?.engine || 'claude';
+                    switch (engine) {
+                      case 'claude':
+                        // Orange/Amber for Claude
+                        return tab.isActive
+                          ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-400 dark:border-amber-500/60 shadow-sm shadow-amber-200/50 dark:shadow-amber-500/10'
+                          : 'bg-amber-50/80 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 hover:bg-amber-100/90 dark:hover:bg-amber-500/15 hover:border-amber-300 dark:hover:border-amber-500/40';
+                      case 'codex':
+                        // Green/Emerald for Codex
+                        return tab.isActive
+                          ? 'bg-emerald-100 dark:bg-emerald-500/20 border-emerald-400 dark:border-emerald-500/60 shadow-sm shadow-emerald-200/50 dark:shadow-emerald-500/10'
+                          : 'bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-100/90 dark:hover:bg-emerald-500/15 hover:border-emerald-300 dark:hover:border-emerald-500/40';
+                      case 'gemini':
+                        // Blue/Indigo for Gemini (Google brand color)
+                        return tab.isActive
+                          ? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400 dark:border-blue-500/60 shadow-sm shadow-blue-200/50 dark:shadow-blue-500/10'
+                          : 'bg-blue-50/80 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30 hover:bg-blue-100/90 dark:hover:bg-blue-500/15 hover:border-blue-300 dark:hover:border-blue-500/40';
+                      default:
+                        return tab.isActive
+                          ? 'bg-muted border-border shadow-sm'
+                          : 'bg-muted/30 border-border/50 hover:bg-muted/50';
+                    }
+                  };
 
-                        {/* 标签页标题 */}
-                        <span className="flex-1 truncate text-sm">
-                          {tab.title}
-                        </span>
-
-                        {/* 弹出窗口按钮 - 仅在 hover 时显示 */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              className={cn(
-                                "flex-shrink-0 h-5 w-5 rounded flex items-center justify-center",
-                                "opacity-0 group-hover:opacity-100 transition-opacity",
-                                "hover:bg-muted-foreground/20"
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDetachTab(tab.id);
-                              }}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <span className="text-xs">在新窗口中打开</span>
-                          </TooltipContent>
-                        </Tooltip>
-
-                        {/* 关闭按钮 - 仅在 hover 时显示 */}
-                        <button
+                  return (
+                    <Tooltip key={tab.id}>
+                      <TooltipTrigger asChild>
+                        <motion.div
+                          layout
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15 }}
                           className={cn(
-                            "flex-shrink-0 h-5 w-5 rounded flex items-center justify-center",
-                            "opacity-0 group-hover:opacity-100 transition-opacity",
-                            "hover:bg-muted-foreground/20"
+                            "group relative flex items-center gap-2 px-3 py-1.5 rounded-lg min-w-[100px] max-w-[200px] flex-shrink-0 cursor-pointer",
+                            "transition-colors border",
+                            getEngineColorClasses(),
+                            tab.isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                            draggedTab === tab.id && "ring-2 ring-primary",
+                            dragOverIndex === index && draggedTab !== tab.id && "border-primary"
                           )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCloseTab(tab.id);
-                          }}
+                          onClick={() => switchToTab(tab.id)}
+                          draggable
+                          onDragStart={() => handleTabDragStart(tab.id)}
+                          onDragEnd={handleTabDragEnd}
+                          onDragOver={(e) => handleTabDragOver(e, index)}
+                          onDrop={(e) => handleTabDrop(e, index)}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </motion.div>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-sm">
-                      <div className="space-y-1 text-xs">
-                        <div className="font-medium">{tab.title}</div>
-                        {tab.session && (
-                          <>
-                            <div className="text-muted-foreground">
-                              会话 ID: {tab.session.id}
-                            </div>
-                            <div className="text-muted-foreground">
-                              项目: {tab.projectPath || tab.session.project_path}
-                            </div>
-                            <div className="text-muted-foreground">
-                              创建时间: {new Date(tab.session.created_at * 1000).toLocaleString('zh-CN')}
-                            </div>
-                          </>
-                        )}
-                        {!tab.session && tab.projectPath && (
-                          <div className="text-muted-foreground">
-                            项目: {tab.projectPath}
+                          {/* 会话状态指示器 - 极简 */}
+                          <div className="flex-shrink-0">
+                            {tab.state === 'streaming' ? (
+                              <motion.div
+                                animate={{ opacity: [1, 0.4, 1] }}
+                                transition={{ duration: 1.5, repeat: Infinity }}
+                                className="h-1.5 w-1.5 bg-success rounded-full"
+                              />
+                            ) : tab.hasUnsavedChanges ? (
+                              <div className="h-1.5 w-1.5 bg-warning rounded-full" />
+                            ) : null}
                           </div>
-                        )}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
+
+                          {/* 标签页标题 */}
+                          <span className="flex-1 truncate text-sm">
+                            {tab.title}
+                          </span>
+
+                          {/* 弹出窗口按钮 - 仅在 hover 时显示 */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                className={cn(
+                                  "flex-shrink-0 h-5 w-5 rounded flex items-center justify-center",
+                                  "opacity-0 group-hover:opacity-100 transition-opacity",
+                                  "hover:bg-muted-foreground/20"
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDetachTab(tab.id);
+                                }}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              <span className="text-xs">在新窗口中打开</span>
+                            </TooltipContent>
+                          </Tooltip>
+
+                          {/* 关闭按钮 - 仅在 hover 时显示 */}
+                          <button
+                            className={cn(
+                              "flex-shrink-0 h-5 w-5 rounded flex items-center justify-center",
+                              "opacity-0 group-hover:opacity-100 transition-opacity",
+                              "hover:bg-muted-foreground/20"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCloseTab(tab.id);
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-sm">
+                        <div className="space-y-1 text-xs">
+                          <div className="font-medium">{tab.title}</div>
+                          {tab.session && (
+                            <>
+                              <div className="text-muted-foreground">
+                                会话 ID: {tab.session.id}
+                              </div>
+                              <div className="text-muted-foreground">
+                                项目: {tab.projectPath || tab.session.project_path}
+                              </div>
+                              <div className="text-muted-foreground">
+                                创建时间: {new Date(tab.session.created_at * 1000).toLocaleString('zh-CN')}
+                              </div>
+                            </>
+                          )}
+                          {!tab.session && tab.projectPath && (
+                            <div className="text-muted-foreground">
+                              项目: {tab.projectPath}
+                            </div>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
               </AnimatePresence>
 
               {/* 新建标签页按钮 */}
@@ -418,7 +447,7 @@ export const TabManager: React.FC<TabManagerProps> = ({
                 <motion.div
                   initial={{ y: -20 }}
                   animate={{ y: 0 }}
-                  transition={{ 
+                  transition={{
                     type: "spring",
                     stiffness: 200,
                     damping: 20,

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Zap, Check, Monitor, Terminal, Sparkles } from 'lucide-react';
+import { Settings, Zap, Check, Monitor, Terminal, Sparkles, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -18,6 +18,12 @@ import {
 import { Popover } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { relaunchApp } from '@/lib/updater';
 import { ask, message } from '@tauri-apps/plugin-dialog';
@@ -54,6 +60,8 @@ interface ExecutionEngineSelectorProps {
   value: ExecutionEngineConfig;
   onChange: (config: ExecutionEngineConfig) => void;
   className?: string;
+  /** When true, the engine selection is locked (e.g., after first message sent) */
+  disabled?: boolean;
 }
 
 // ============================================================================
@@ -64,6 +72,7 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
   value,
   onChange,
   className = '',
+  disabled = false,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [codexAvailable, setCodexAvailable] = useState(false);
@@ -260,13 +269,14 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
   return (
     <Popover
       open={showSettings}
-      onOpenChange={setShowSettings}
+      onOpenChange={disabled ? undefined : setShowSettings}
       trigger={
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={showSettings}
-          className={`justify-between ${className}`}
+          className={`justify-between ${className} ${disabled ? 'opacity-70' : ''}`}
+          disabled={disabled}
         >
           <div className="flex items-center gap-2">
             {value.engine === 'gemini' ? (
@@ -275,12 +285,30 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
               <Zap className="h-4 w-4" />
             )}
             <span>{getEngineDisplayName()}</span>
-            {value.engine === 'codex' && value.codexMode && (
+            {disabled && (
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="text-xs text-muted-foreground flex items-center gap-0.5 cursor-help hover:text-foreground transition-colors"
+                      aria-label="模型与对话绑定，新建对话使用其他模型"
+                    >
+                      <Lock className="h-3 w-3" />
+                      已锁定
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[220px] text-center z-[100]">
+                    <p className="text-xs">模型与对话绑定，新建对话使用其他模型</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {!disabled && value.engine === 'codex' && value.codexMode && (
               <span className="text-xs text-muted-foreground">
                 ({value.codexMode === 'read-only' ? '只读' : value.codexMode === 'full-auto' ? '编辑' : '完全访问'})
               </span>
             )}
-            {value.engine === 'gemini' && value.geminiApprovalMode && (
+            {!disabled && value.engine === 'gemini' && value.geminiApprovalMode && (
               <span className="text-xs text-muted-foreground">
                 ({value.geminiApprovalMode === 'yolo' ? 'YOLO' : value.geminiApprovalMode === 'auto_edit' ? '自动编辑' : '默认'})
               </span>
@@ -293,12 +321,20 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
         <div className="space-y-4 p-4">
           {/* Engine Selection */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">执行引擎</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">执行引擎</Label>
+              {disabled && (
+                <span className="text-xs text-orange-500 dark:text-orange-400 flex items-center gap-1">
+                  🔒 发送消息后锁定
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <Button
                 variant={value.engine === 'claude' ? 'default' : 'outline'}
                 className="justify-start"
                 onClick={() => handleEngineChange('claude')}
+                disabled={disabled}
               >
                 <Check className={`mr-2 h-4 w-4 ${value.engine === 'claude' ? 'opacity-100' : 'opacity-0'}`} />
                 Claude
@@ -307,7 +343,7 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
                 variant={value.engine === 'codex' ? 'default' : 'outline'}
                 className="justify-start"
                 onClick={() => handleEngineChange('codex')}
-                disabled={!codexAvailable}
+                disabled={disabled || !codexAvailable}
               >
                 <Check className={`mr-2 h-4 w-4 ${value.engine === 'codex' ? 'opacity-100' : 'opacity-0'}`} />
                 Codex
@@ -316,7 +352,7 @@ export const ExecutionEngineSelector: React.FC<ExecutionEngineSelectorProps> = (
                 variant={value.engine === 'gemini' ? 'default' : 'outline'}
                 className="justify-start"
                 onClick={() => handleEngineChange('gemini')}
-                disabled={!geminiAvailable}
+                disabled={disabled || !geminiAvailable}
               >
                 <Check className={`mr-2 h-4 w-4 ${value.engine === 'gemini' ? 'opacity-100' : 'opacity-0'}`} />
                 Gemini

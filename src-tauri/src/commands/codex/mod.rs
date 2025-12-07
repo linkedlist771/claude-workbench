@@ -88,6 +88,7 @@ pub use config::{
     set_custom_codex_path,
     get_codex_path,
     clear_custom_codex_path,
+    validate_codex_path_cmd,
     get_codex_mode_config,
     set_codex_mode_config,
 };

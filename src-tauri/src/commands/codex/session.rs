@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 
 // Import platform-specific utilities for window hiding
 use crate::commands::claude::apply_no_window_async;
-use crate::claude_binary::detect_binary_for_tool;
+use crate::claude_binary::{detect_binary_for_tool, load_shared_env_from_settings};
 // Import WSL utilities for Windows + WSL Codex support
 use super::super::wsl_utils;
 // Import config module for sessions directory
@@ -600,6 +600,12 @@ fn build_codex_command(
     // Set working directory
     cmd.current_dir(&options.project_path);
 
+    // Apply shared Claude settings env first
+    let shared_env = load_shared_env_from_settings();
+    for (key, value) in shared_env {
+        cmd.env(&key, &value);
+    }
+
     // Set API key environment variable if provided
     if let Some(ref api_key) = options.api_key {
         cmd.env("CODEX_API_KEY", api_key);
@@ -691,6 +697,12 @@ fn build_wsl_codex_command(
         Some(&options.project_path),
         wsl_config.distro.as_deref(),
     );
+
+    // Apply shared Claude settings env first (passed to WSL process)
+    let shared_env = load_shared_env_from_settings();
+    for (key, value) in shared_env {
+        cmd.env(&key, &value);
+    }
 
     // Set API key environment variable if provided
     // Note: This will be passed to WSL environment

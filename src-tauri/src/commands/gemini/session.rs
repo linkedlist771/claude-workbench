@@ -13,6 +13,7 @@ use super::config::{build_gemini_env, load_gemini_config};
 use super::parser::{convert_to_unified_message, parse_gemini_line, parse_gemini_line_flexible, convert_raw_to_unified_message};
 use super::types::{GeminiExecutionOptions, GeminiInstallStatus, GeminiProcessState};
 use crate::commands::claude::apply_no_window_async;
+use crate::claude_binary::load_shared_env_from_settings;
 
 // ============================================================================
 // Binary Detection
@@ -20,86 +21,23 @@ use crate::commands::claude::apply_no_window_async;
 
 /// Find Gemini CLI binary path
 pub fn find_gemini_binary() -> Result<String, String> {
-    // 1. Check environment variable
-    if let Ok(path) = std::env::var("GEMINI_CLI_PATH") {
-        if std::path::Path::new(&path).exists() {
-            log::info!("Found Gemini CLI from GEMINI_CLI_PATH: {}", path);
-            return Ok(path);
-        }
+    let (_env, detected) = crate::claude_binary::find_binary_path(
+        "gemini",
+        "GEMINI_CLI_PATH",
+        "gemini",
+        None,
+    );
+
+    if let Some(inst) = detected {
+        log::info!(
+            "Found Gemini CLI via universal finder: {} (source: {})",
+            inst.path,
+            inst.source
+        );
+        Ok(inst.path)
+    } else {
+        Err("Gemini CLI not found. Install with: npm install -g @google/gemini-cli".to_string())
     }
-
-    // 2. Check common npm global paths
-    #[cfg(target_os = "windows")]
-    let npm_paths = vec![
-        // npm global (Windows)
-        dirs::data_dir()
-            .map(|d| d.join("npm").join("gemini.cmd"))
-            .unwrap_or_default(),
-        dirs::data_dir()
-            .map(|d| d.join("npm").join("gemini"))
-            .unwrap_or_default(),
-        // AppData/Roaming/npm
-        std::env::var("APPDATA")
-            .map(|d| std::path::PathBuf::from(d).join("npm").join("gemini.cmd"))
-            .unwrap_or_default(),
-    ];
-
-    #[cfg(not(target_os = "windows"))]
-    let npm_paths = vec![
-        // npm global (Unix)
-        std::path::PathBuf::from("/usr/local/bin/gemini"),
-        std::path::PathBuf::from("/usr/bin/gemini"),
-        dirs::home_dir()
-            .map(|d| d.join(".npm-global").join("bin").join("gemini"))
-            .unwrap_or_default(),
-        dirs::home_dir()
-            .map(|d| d.join(".local").join("bin").join("gemini"))
-            .unwrap_or_default(),
-        // Homebrew (macOS)
-        std::path::PathBuf::from("/opt/homebrew/bin/gemini"),
-    ];
-
-    for path in npm_paths {
-        if path.exists() {
-            let path_str = path.to_string_lossy().to_string();
-            log::info!("Found Gemini CLI at: {}", path_str);
-            return Ok(path_str);
-        }
-    }
-
-    // 3. Try using 'which' or 'where' command
-    #[cfg(target_os = "windows")]
-    let which_cmd = "where";
-    #[cfg(not(target_os = "windows"))]
-    let which_cmd = "which";
-
-    let mut cmd = std::process::Command::new(which_cmd);
-    cmd.arg("gemini");
-
-    // Add CREATE_NO_WINDOW flag on Windows to prevent terminal window popup
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    if let Ok(output) = cmd.output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .lines()
-                .next()
-                .unwrap_or("")
-                .to_string();
-            if !path.is_empty() && std::path::Path::new(&path).exists() {
-                log::info!("Found Gemini CLI via {}: {}", which_cmd, path);
-                return Ok(path);
-            }
-        }
-    }
-
-    Err("Gemini CLI not found. Install with: npm install -g @google/gemini-cli".to_string())
 }
 
 /// Get Gemini CLI version
@@ -222,7 +160,13 @@ pub async fn execute_gemini(
     cmd.args(&args);
     cmd.current_dir(&options.project_path);
 
-    // Set environment variables from config
+    // Apply shared Claude settings env first, then Gemini-specific overrides
+    let shared_env = load_shared_env_from_settings();
+    for (key, value) in shared_env {
+        cmd.env(&key, &value);
+    }
+
+    // Set environment variables from config (overrides shared if same key)
     let env_vars = build_gemini_env(&config);
     for (key, value) in env_vars {
         cmd.env(&key, &value);

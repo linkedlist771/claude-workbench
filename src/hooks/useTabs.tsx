@@ -13,16 +13,19 @@ export interface Tab {
   id: string;
   title: string;
   type: 'session' | 'new';
-  
+
   // Session data
   projectPath?: string;
   session?: Session;
-  
+
+  // Engine type for color grouping
+  engine?: 'claude' | 'codex' | 'gemini';
+
   // State management (simplified)
   state: 'idle' | 'streaming' | 'error';
   errorMessage?: string; // Flattened from error object
   hasUnsavedChanges: boolean;
-  
+
   // Metadata
   createdAt: number;
   lastActiveAt: number;
@@ -48,6 +51,7 @@ interface TabContextValue {
   updateTabState: (tabId: string, state: Tab['state'], errorMessage?: string) => void;
   updateTabChanges: (tabId: string, hasChanges: boolean) => void;
   updateTabTitle: (tabId: string, title: string) => void;
+  updateTabEngine: (tabId: string, engine: 'claude' | 'codex' | 'gemini') => void;
   getTabById: (tabId: string) => TabSession | undefined;
   getActiveTab: () => TabSession | undefined;
   openSessionInBackground: (session: Session) => { tabId: string; isNew: boolean };
@@ -86,7 +90,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const nextTabId = useRef(1);
-  
+
   // Cleanup callbacks stored separately (not in state)
   const cleanupCallbacksRef = useRef<Map<string, () => Promise<void> | void>>(new Map());
 
@@ -97,11 +101,11 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
     try {
       const persistedState = localStorage.getItem(STORAGE_KEY);
       if (!persistedState) return;
-      
+
       const { tabs: savedTabs, activeTabId: savedActiveTabId } = JSON.parse(persistedState);
-      
+
       if (!Array.isArray(savedTabs)) return;
-      
+
       // Validate and filter tabs
       const validTabs = savedTabs.filter((tab: any) => {
         if (!tab.id || !tab.title) {
@@ -115,15 +119,15 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
         state: tab.state || 'idle',
         hasUnsavedChanges: tab.hasUnsavedChanges ?? tab.hasChanges ?? false,
       }));
-      
+
       // Validate activeTabId
       const validActiveTabId = validTabs.find(t => t.id === savedActiveTabId)
         ? savedActiveTabId
         : (validTabs[0]?.id || null);
-      
+
       setTabs(validTabs);
       setActiveTabId(validActiveTabId);
-      
+
       console.log(`[useTabs] Restored ${validTabs.length} tabs from storage`);
     } catch (error) {
       console.error('[useTabs] Failed to restore tabs:', error);
@@ -206,6 +210,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
       type: session ? 'session' : 'new',
       projectPath: projectPath || session?.project_path,
       session,
+      engine: session?.engine || 'claude', // Default to claude
       state: 'idle',
       hasUnsavedChanges: false,
       createdAt: Date.now(),
@@ -213,7 +218,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
     };
 
     setTabs(prev => [...prev, newTab]);
-    
+
     if (activate) {
       setActiveTabId(newTabId);
     }
@@ -314,6 +319,15 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
     setTabs(prev =>
       prev.map(tab =>
         tab.id === tabId ? { ...tab, title } : tab
+      )
+    );
+  }, []);
+
+  // Update tab engine (for locking after first message)
+  const updateTabEngine = useCallback((tabId: string, engine: 'claude' | 'codex' | 'gemini') => {
+    setTabs(prev =>
+      prev.map(tab =>
+        tab.id === tabId ? { ...tab, engine } : tab
       )
     );
   }, []);
@@ -564,6 +578,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
     updateTabState,
     updateTabChanges,
     updateTabTitle,
+    updateTabEngine,
     getTabById,
     getActiveTab,
     openSessionInBackground,

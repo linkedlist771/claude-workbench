@@ -1,16 +1,23 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  CheckCircle, 
-  XCircle, 
-  Loader2, 
-  AlertCircle, 
+import {
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertCircle,
   RefreshCw,
   Settings,
   Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -26,6 +33,9 @@ import { tokenExtractor } from "@/lib/tokenExtractor";
 import { useSessionActivityStatus } from "@/hooks/useSessionActivityStatus";
 
 import type { ClaudeStreamMessage } from '@/types/claude';
+
+// CLI types for selector
+type CliType = 'claude' | 'codex' | 'gemini';
 
 // Global state to prevent multiple simultaneous checks
 let isChecking = false;
@@ -45,7 +55,7 @@ const loadCachedStatus = (): StatusInfo | null => {
     if (cached) {
       const { statusInfo, timestamp }: CachedStatus = JSON.parse(cached);
       const age = Date.now() - timestamp;
-      
+
       // Use cache if it's within 24 hours, regardless of status
       // This prevents frequent re-checking
       if (age < CACHE_DURATION) {
@@ -108,6 +118,10 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
     status: 'checking'
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedCli, setSelectedCli] = useState<CliType>('claude');
+  const [cliPath, setCliPath] = useState<string | null>(null);
+  const [isPathExpanded, setIsPathExpanded] = useState(false);
+  const [pathCopied, setPathCopied] = useState(false);
 
   // Activity status monitoring
   const sessionActivity = useSessionActivityStatus({
@@ -174,7 +188,7 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
       console.log('Using cached status, skipping check');
       return; // Use cache, no need to check - this is the key optimization
     }
-    
+
     // Only check if no cache available and not already checking
     if (!isChecking) {
       console.log('No cache available, performing initial check');
@@ -201,41 +215,93 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
     };
   }, [onSettingsClick]);
 
+  // Re-check status when selected CLI changes
+  useEffect(() => {
+    checkClaudeStatus();
+  }, [selectedCli]);
+
   // Simple one-time check without retry logic
   const checkClaudeStatus = async () => {
     if (isChecking) return; // Prevent multiple simultaneous checks
-    
+
     try {
       isChecking = true;
       const checkingStatus = { status: 'checking' as const };
       setStatusInfo(checkingStatus);
-      
-      // Direct API call without retry wrapper
-      const versionStatus = await api.checkClaudeVersion();
-      
-      const newStatus = {
-        status: versionStatus.is_installed ? 'connected' as const : 'disconnected' as const,
-        version: versionStatus.version,
-        error: versionStatus.is_installed ? undefined : '未找到 Claude CLI',
-        lastChecked: new Date()
-      };
-      
+      setCliPath(null);
+
+      let newStatus: StatusInfo;
+      let detectedPath: string | null = null;
+
+      if (selectedCli === 'claude') {
+        // Claude CLI check
+        const versionStatus = await api.checkClaudeVersion();
+        newStatus = {
+          status: versionStatus.is_installed ? 'connected' as const : 'disconnected' as const,
+          version: versionStatus.version,
+          error: versionStatus.is_installed ? undefined : '未找到 Claude CLI',
+          lastChecked: new Date()
+        };
+        // Get Claude path
+        try {
+          detectedPath = await api.getClaudePath();
+        } catch {
+          detectedPath = null;
+        }
+      } else if (selectedCli === 'codex') {
+        // Codex CLI check
+        const availability = await api.checkCodexAvailability();
+        newStatus = {
+          status: availability.available ? 'connected' as const : 'disconnected' as const,
+          version: availability.version,
+          error: availability.available ? undefined : (availability.error || '未找到 Codex CLI'),
+          lastChecked: new Date()
+        };
+        // Get Codex path
+        try {
+          detectedPath = await api.getCodexPath();
+        } catch {
+          detectedPath = null;
+        }
+      } else {
+        // Gemini CLI check
+        const installStatus = await api.checkGeminiInstalled();
+        newStatus = {
+          status: installStatus.installed ? 'connected' as const : 'disconnected' as const,
+          version: installStatus.version,
+          error: installStatus.installed ? undefined : (installStatus.error || '未找到 Gemini CLI'),
+          lastChecked: new Date()
+        };
+        // Get Gemini path
+        try {
+          detectedPath = await api.getGeminiPath();
+        } catch {
+          detectedPath = null;
+        }
+      }
+
       // Update local state
       setStatusInfo(newStatus);
-      
-      // Save to cache for future sessions (24 hour cache)
-      saveCachedStatus(newStatus);
-      console.log('Claude status check completed:', newStatus.status);
+      setCliPath(detectedPath);
+
+      // Save to cache for future sessions (24 hour cache) - only for Claude
+      if (selectedCli === 'claude') {
+        saveCachedStatus(newStatus);
+      }
+      console.log(`${selectedCli} status check completed:`, newStatus.status);
     } catch (error) {
-      console.error('Failed to check Claude status:', error);
+      console.error(`Failed to check ${selectedCli} status:`, error);
       const errorStatus = {
         status: 'error' as const,
         error: '状态检查失败',
         lastChecked: new Date()
       };
       setStatusInfo(errorStatus);
+      setCliPath(null);
       // Cache error status too to prevent constant retrying
-      saveCachedStatus(errorStatus);
+      if (selectedCli === 'claude') {
+        saveCachedStatus(errorStatus);
+      }
     } finally {
       isChecking = false;
     }
@@ -341,9 +407,21 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
           }
           content={
             <div className="space-y-3">
-              {/* Header */}
+              {/* Header with CLI Selector */}
               <div className="flex items-center justify-between">
-                <h4 className="font-semibold text-sm">Claude CLI 状态</h4>
+                <div className="flex items-center gap-2">
+                  <Select value={selectedCli} onValueChange={(v) => setSelectedCli(v as CliType)}>
+                    <SelectTrigger className="h-7 w-[140px] text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="claude">Claude CLI</SelectItem>
+                      <SelectItem value="codex">Codex CLI</SelectItem>
+                      <SelectItem value="gemini">Gemini CLI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-muted-foreground">状态</span>
+                </div>
                 <div className="flex items-center gap-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -375,7 +453,7 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Claude 设置</p>
+                        <p>CLI 设置</p>
                       </TooltipContent>
                     </Tooltip>
                   )}
@@ -401,6 +479,42 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
                     <Badge variant="outline" className="text-xs">
                       {statusInfo.version}
                     </Badge>
+                  </div>
+                )}
+
+                {/* CLI Path Display */}
+                {cliPath && (
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm text-muted-foreground flex-shrink-0">
+                      路径:
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className={cn(
+                            "text-xs text-muted-foreground font-mono cursor-pointer hover:text-foreground transition-colors",
+                            isPathExpanded ? "break-all" : "truncate max-w-[180px]"
+                          )}
+                          onDoubleClick={async () => {
+                            setIsPathExpanded(!isPathExpanded);
+                            // Copy to clipboard
+                            try {
+                              await navigator.clipboard.writeText(cliPath);
+                              setPathCopied(true);
+                              setTimeout(() => setPathCopied(false), 2000);
+                            } catch (e) {
+                              console.error('Failed to copy path:', e);
+                            }
+                          }}
+                          title={cliPath}
+                        >
+                          {cliPath}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{pathCopied ? '已复制!' : '双击展开/折叠并复制'}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 )}
 
@@ -458,7 +572,7 @@ export const ClaudeStatusIndicator: React.FC<ClaudeStatusIndicatorProps> = ({
               )}
             </div>
           }
-          side="right"
+          side="top"
           align="start"
           className="w-80 p-4"
         />

@@ -209,13 +209,13 @@ const FloatingPromptInputInner = (
 
         if (envVars && typeof envVars === 'object') {
           const customModel = envVars.ANTHROPIC_MODEL ||
-                             envVars.ANTHROPIC_DEFAULT_SONNET_MODEL ||
-                             envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
+            envVars.ANTHROPIC_DEFAULT_SONNET_MODEL ||
+            envVars.ANTHROPIC_DEFAULT_OPUS_MODEL;
 
           if (customModel && typeof customModel === 'string') {
             const isThirdPartyModel = !customModel.toLowerCase().includes('claude') &&
-                                     !customModel.toLowerCase().includes('sonnet') &&
-                                     !customModel.toLowerCase().includes('opus');
+              !customModel.toLowerCase().includes('sonnet') &&
+              !customModel.toLowerCase().includes('opus');
 
             if (isThirdPartyModel) {
               const customModelConfig: ModelConfig = {
@@ -393,6 +393,7 @@ const FloatingPromptInputInner = (
             ref={expandedTextareaRef}
             prompt={state.prompt}
             disabled={disabled}
+            hasMessages={hasMessages}
             imageAttachments={imageAttachments}
             embeddedImages={embeddedImages}
             executionEngineConfig={state.executionEngineConfig}
@@ -495,7 +496,7 @@ const FloatingPromptInputInner = (
             setEnableDualAPI={setEnableDualAPI}
             getEnabledProviders={getEnabledProviders}
             handleEnhancePromptWithAPI={handleEnhancePromptWithAPI}
-            onCancel={onCancel || (() => {})}
+            onCancel={onCancel || (() => { })}
             onSend={handleSend}
           />
         </div>

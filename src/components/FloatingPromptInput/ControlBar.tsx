@@ -85,6 +85,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
       <ExecutionEngineSelector
         value={executionEngineConfig}
         onChange={setExecutionEngineConfig}
+        disabled={hasMessages}
       />
 
       {/* Only show Claude-specific controls for Claude Code */}

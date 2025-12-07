@@ -196,6 +196,20 @@ export const Settings: React.FC<SettingsProps> = ({
       setError(null);
       setToast(null);
 
+      // 将三个常见的 API Key 联动：若任意一个被填写，则同步到另外两个，避免缺失
+      const syncApiKeys = (envMap: Record<string, string>) => {
+        const apiKeys = ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
+        const firstDefined = apiKeys
+          .map((k) => envMap[k]?.trim())
+          .find((v) => v);
+        if (firstDefined) {
+          apiKeys.forEach((k) => {
+            envMap[k] = firstDefined;
+          });
+        }
+        return envMap;
+      };
+
       // Build the settings object
       const updatedSettings: ClaudeSettings = {
         ...settings,
@@ -207,14 +221,16 @@ export const Settings: React.FC<SettingsProps> = ({
           // 保留现有的所有环境变量（包括代理商配置的ANTHROPIC_*变量）
           ...settings?.env,
           // 然后添加/覆盖UI中配置的环境变量
-          ...envVars
-            .filter(envVar => envVar.enabled) // 只保存启用的环境变量
-            .reduce((acc, { key, value }) => {
-              if (key.trim() && value.trim()) {
-                acc[key] = value;
-              }
-              return acc;
-            }, {} as Record<string, string>),
+          ...syncApiKeys(
+            envVars
+              .filter(envVar => envVar.enabled) // 只保存启用的环境变量
+              .reduce((acc, { key, value }) => {
+                if (key.trim() && value.trim()) {
+                  acc[key] = value;
+                }
+                return acc;
+              }, {} as Record<string, string>)
+          ),
         },
       };
 

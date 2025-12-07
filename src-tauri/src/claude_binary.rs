@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 /// Shared module for detecting Claude Code binary installations
 /// Supports NVM installations, aliased paths, version-based selection, and bundled sidecars
 /// Cross-platform support for Windows and macOS
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
@@ -25,6 +25,7 @@ pub struct RuntimeEnvironment {
 pub struct BinarySearchConfig {
     pub claude: Option<BinarySearchSection>,
     pub codex: Option<BinarySearchSection>,
+    pub gemini: Option<BinarySearchSection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -120,6 +121,7 @@ fn pick_section(cfg: &BinarySearchConfig, key: &str) -> Option<BinarySearchSecti
     match key {
         "claude" => cfg.claude.clone(),
         "codex" => cfg.codex.clone(),
+        "gemini" => cfg.gemini.clone(),
         _ => None,
     }
 }
@@ -714,19 +716,39 @@ fn select_best_with_priority(
     installations.into_iter().map(|p| p.installation).next()
 }
 
+/// 通用二进制查找器，支持传入额外候选（带优先级）
+pub fn find_binary_path(
+    tool: &str,
+    env_var: &str,
+    config_key: &str,
+    extra_candidates: Option<Vec<(ClaudeInstallation, u8)>>,
+) -> (RuntimeEnvironment, Option<ClaudeInstallation>) {
+    let runtime_env = detect_runtime_environment();
+    let user_cfg = load_binary_search_config();
+    let user_section = pick_section(&user_cfg, config_key);
+
+    let mut prioritized = collect_runtime_candidates(tool, env_var, &runtime_env, user_section);
+
+    if let Some(extra) = extra_candidates {
+        for (installation, priority) in extra {
+            prioritized.push(PrioritizedInstallation {
+                priority,
+                installation,
+            });
+        }
+    }
+
+    let best = select_best_with_priority(prioritized);
+    (runtime_env, best)
+}
+
 /// 通用检测入口，可供 Codex/其他二进制共享
 pub fn detect_binary_for_tool(
     tool: &str,
     env_var: &str,
     config_key: &str,
 ) -> (RuntimeEnvironment, Option<ClaudeInstallation>) {
-    let runtime_env = detect_runtime_environment();
-    let user_cfg = load_binary_search_config();
-    let user_section = pick_section(&user_cfg, config_key);
-
-    let prioritized = collect_runtime_candidates(tool, env_var, &runtime_env, user_section);
-    let best = select_best_with_priority(prioritized);
-    (runtime_env, best)
+    find_binary_path(tool, env_var, config_key, None)
 }
 
 /// 获取当前平台下可执行名称的别名集合（含 .exe/.cmd）
@@ -899,34 +921,14 @@ pub fn find_claude_binary(app_handle: &tauri::AppHandle) -> Result<String, Strin
 
     info!("No valid cached path found, starting fresh discovery...");
 
-    // 运行时环境 & 用户配置
-    let runtime_env = detect_runtime_environment();
-    let user_cfg = load_binary_search_config();
-    let user_section = pick_section(&user_cfg, "claude");
-
-    // 新的运行时候选收集（支持 env/注册表/常见路径/用户路径）
-    let mut prioritized = collect_runtime_candidates("claude", "CLAUDE_PATH", &runtime_env, user_section);
-
-    // 兼容旧逻辑：补充 discover_system_installations 结果，优先级稍低
+    // 使用通用二进制查找器，并追加旧版候选列表
     let legacy = discover_system_installations()
         .into_iter()
-        .map(|inst| PrioritizedInstallation {
-            priority: 5,
-            installation: inst,
-        });
-    prioritized.extend(legacy);
+        .map(|inst| (inst, 5))
+        .collect::<Vec<_>>();
+    let (_env, best) = find_binary_path("claude", "CLAUDE_PATH", "claude", Some(legacy));
 
-    if prioritized.is_empty() {
-        error!("❌ Could not find Claude CLI in any location (runtime detection empty)");
-        return Err("Claude CLI not found. 请安装 'npm install -g @anthropic-ai/claude-code' 或检查 CLAUDE_PATH 设置".to_string());
-    }
-
-    info!(
-        "Found {} Claude installation candidate(s), selecting best version with priority...",
-        prioritized.len()
-    );
-
-    if let Some(best) = select_best_with_priority(prioritized) {
+    if let Some(best) = best {
         info!("========================================");
         info!(
             "✅ Selected Claude CLI: {}",
@@ -2115,4 +2117,29 @@ pub fn create_command_with_env(program: &str) -> Command {
     }
 
     cmd
+}
+
+/// Load shared environment variables from ~/.claude/settings.json (env section).
+/// Used by multiple providers (Claude, Codex, Gemini) to apply user-defined env.
+pub fn load_shared_env_from_settings() -> HashMap<String, String> {
+    let mut env_map = HashMap::new();
+
+    if let Ok(claude_dir) = crate::commands::claude::get_claude_dir() {
+        let settings_path = claude_dir.join("settings.json");
+        if settings_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
+                        for (key, value) in env_obj {
+                            if let Some(value_str) = value.as_str() {
+                                env_map.insert(key.clone(), value_str.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    env_map
 }

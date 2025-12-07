@@ -3,7 +3,7 @@ import type { HooksConfiguration } from '@/types/hooks';
 import { HooksManager } from '@/lib/hooksManager';
 
 /** Process type for tracking in ProcessRegistry */
-export type ProcessType = 
+export type ProcessType =
   | { AgentRun: { agent_id: number; agent_name: string } }
   | { ClaudeSession: { session_id: string } };
 
@@ -730,7 +730,7 @@ export const api = {
     try {
       const result = await invoke<ClaudeSettings>("get_claude_settings");
       console.log("Raw result from get_claude_settings:", result);
-      
+
       // Due to #[serde(flatten)] in Rust, the result is directly the settings object
       return result;
     } catch (error) {
@@ -1659,12 +1659,12 @@ export const api = {
       .replace(/[^a-z0-9]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
-      
+
     const fullConfig: ProviderConfig = {
       ...config,
       id
     };
-    
+
     try {
       return await invoke<string>("add_provider_config", { config: fullConfig });
     } catch (error) {
@@ -2771,6 +2771,19 @@ export const api = {
   },
 
   /**
+   * Gets current Codex CLI path
+   * @returns Promise resolving to the current Codex CLI path
+   */
+  async getCodexPath(): Promise<string> {
+    try {
+      return await invoke<string>("get_codex_path");
+    } catch (error) {
+      console.error("Failed to get Codex path:", error);
+      throw error;
+    }
+  },
+
+  /**
    * Scans for all possible Codex installation paths
    * @returns Promise resolving to array of found paths
    */
@@ -3501,6 +3514,54 @@ export const api = {
       await invoke("delete_gemini_session", { projectPath, sessionId });
     } catch (error) {
       console.error("Failed to delete Gemini session:", error);
+      throw error;
+    }
+  },
+
+  // ============================================================================
+  // Gemini Custom Path Management
+  // ============================================================================
+
+  /**
+   * Sets custom Gemini CLI path
+   * @param path - Path to custom Gemini CLI executable (null to clear)
+   */
+  async setGeminiCustomPath(path: string | null): Promise<void> {
+    try {
+      if (path === null) {
+        await invoke("clear_custom_gemini_path");
+      } else {
+        await invoke("set_custom_gemini_path", { customPath: path });
+      }
+    } catch (error) {
+      console.error("Failed to set custom Gemini path:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Validates a Gemini CLI path
+   * @param path - Path to validate
+   * @returns Promise resolving to whether the path is valid
+   */
+  async validateGeminiPath(path: string): Promise<boolean> {
+    try {
+      return await invoke<boolean>("validate_gemini_path_cmd", { path });
+    } catch (error) {
+      console.error("Failed to validate Gemini path:", error);
+      return false;
+    }
+  },
+
+  /**
+   * Gets current Gemini CLI path
+   * @returns Promise resolving to the current Gemini CLI path
+   */
+  async getGeminiPath(): Promise<string> {
+    try {
+      return await invoke<string>("get_gemini_path");
+    } catch (error) {
+      console.error("Failed to get Gemini path:", error);
       throw error;
     }
   },

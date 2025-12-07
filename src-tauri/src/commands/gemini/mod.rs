@@ -33,6 +33,11 @@ pub use config::{
     // System prompt commands
     get_gemini_system_prompt,
     save_gemini_system_prompt,
+    // Custom Gemini CLI path commands
+    set_custom_gemini_path,
+    get_gemini_path,
+    clear_custom_gemini_path,
+    validate_gemini_path_cmd,
 };
 pub use session::{cancel_gemini, check_gemini_installed, execute_gemini};
 

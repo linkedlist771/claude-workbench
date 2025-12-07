@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Main gradient: Orange (Claude) → Blue (Gemini) → Purple -->
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    
+    <!-- Border gradient -->
+    <linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB923C" />
+      <stop offset="33%" stop-color="#60A5FA" />
+      <stop offset="66%" stop-color="#A78BFA" />
+      <stop offset="100%" stop-color="#34D399" />
+    </linearGradient>
+    
+    <!-- Glow effect -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Inner shadow -->
+    <filter id="innerShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feOffset dx="0" dy="4"/>
+      <feGaussianBlur stdDeviation="8"/>
+      <feComposite operator="out" in="SourceGraphic"/>
+      <feColorMatrix values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.3 0"/>
+      <feBlend mode="overlay" in2="SourceGraphic"/>
+    </filter>
+  </defs>
+  
+  <!-- Background circle with dark gradient -->
+  <circle cx="256" cy="256" r="240" fill="#1a1a2e"/>
+  
+  <!-- Hexagon outer ring (Codex style) -->
+  <polygon 
+    points="256,40 432,132 432,316 256,408 80,316 80,132" 
+    fill="none" 
+    stroke="url(#borderGradient)" 
+    stroke-width="8"
+    stroke-linejoin="round"
+    filter="url(#glow)"
+  />
+  
+  <!-- Inner hexagon with gradient fill -->
+  <polygon 
+    points="256,70 402,150 402,298 256,378 110,298 110,150" 
+    fill="#1e1e30"
+    stroke="url(#borderGradient)" 
+    stroke-width="3"
+    stroke-opacity="0.5"
+    stroke-linejoin="round"
+  />
+  
+  <!-- Terminal prompt ">" symbol (Claude/Gemini CLI style) -->
+  <g filter="url(#glow)">
+    <!-- Main prompt symbol -->
+    <path 
+      d="M160,180 L280,256 L160,332" 
+      fill="none" 
+      stroke="url(#mainGradient)" 
+      stroke-width="28" 
+      stroke-linecap="round" 
+      stroke-linejoin="round"
+    />
+    
+    <!-- Cursor line -->
+    <line 
+      x1="310" y1="180" x2="310" y2="332" 
+      stroke="url(#borderGradient)" 
+      stroke-width="20" 
+      stroke-linecap="round"
+      opacity="0.8"
+    />
+  </g>
+  
+  <!-- Gemini-style star decorations -->
+  <!-- Top star -->
+  <polygon 
+    points="256,55 262,75 282,75 266,88 272,108 256,95 240,108 246,88 230,75 250,75" 
+    fill="url(#borderGradient)"
+    opacity="0.9"
+    transform="scale(0.6) translate(170, 30)"
+  />
+  
+  <!-- Bottom-right star -->
+  <polygon 
+    points="256,55 262,75 282,75 266,88 272,108 256,95 240,108 246,88 230,75 250,75" 
+    fill="url(#borderGradient)"
+    opacity="0.7"
+    transform="scale(0.5) translate(520, 520)"
+  />
+  
+  <!-- Bottom-left small diamond -->
+  <polygon 
+    points="100,380 110,400 100,420 90,400" 
+    fill="#60A5FA"
+    opacity="0.6"
+  />
+  
+  <!-- Neural network lines (Codex style) -->
+  <g stroke="url(#borderGradient)" stroke-width="2" opacity="0.3">
+    <line x1="80" y1="132" x2="160" y2="180"/>
+    <line x1="80" y1="316" x2="160" y2="332"/>
+    <line x1="432" y1="132" x2="340" y2="200"/>
+    <line x1="432" y1="316" x2="340" y2="280"/>
+  </g>
+  
+  <!-- Small accent dots -->
+  <circle cx="420" cy="140" r="6" fill="#F97316" opacity="0.8"/>
+  <circle cx="92" cy="140" r="4" fill="#3B82F6" opacity="0.8"/>
+  <circle cx="92" cy="308" r="5" fill="#8B5CF6" opacity="0.8"/>
+  <circle cx="420" cy="308" r="4" fill="#34D399" opacity="0.7"/>
+</svg>

@@ -29,7 +29,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
-  
+
   // Custom Claude path state
   const [customClaudePath, setCustomClaudePath] = useState<string>("");
   const [isCustomPathMode, setIsCustomPathMode] = useState(false);
@@ -41,6 +41,13 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const [codexPathError, setCodexPathError] = useState<string | null>(null);
   const [codexPathValid, setCodexPathValid] = useState<boolean | null>(null);
   const [validatingCodexPath, setValidatingCodexPath] = useState(false);
+
+  // Custom Gemini path state
+  const [customGeminiPath, setCustomGeminiPath] = useState<string>("");
+  const [isGeminiCustomPathMode, setIsGeminiCustomPathMode] = useState(false);
+  const [geminiPathError, setGeminiPathError] = useState<string | null>(null);
+  const [geminiPathValid, setGeminiPathValid] = useState<boolean | null>(null);
+  const [validatingGeminiPath, setValidatingGeminiPath] = useState(false);
 
   /**
    * Handle setting custom Claude CLI path
@@ -54,14 +61,14 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     try {
       setCustomPathError(null);
       await api.setCustomClaudePath(customClaudePath.trim());
-      
+
       // Clear the custom path field and exit custom mode
       setCustomClaudePath("");
       setIsCustomPathMode(false);
-      
+
       // Show success message
       setToast({ message: "自定义 Claude CLI 路径设置成功", type: "success" });
-      
+
       // Trigger status refresh
       window.dispatchEvent(new CustomEvent('validate-claude-installation'));
     } catch (error) {
@@ -184,11 +191,102 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
     }
   };
 
+  /**
+   * Validate Gemini path and update status
+   */
+  const handleValidateGeminiPath = async (path: string) => {
+    if (!path.trim()) {
+      setGeminiPathValid(null);
+      return;
+    }
+
+    setValidatingGeminiPath(true);
+    try {
+      const isValid = await api.validateGeminiPath(path.trim());
+      setGeminiPathValid(isValid);
+      if (!isValid) {
+        setGeminiPathError("路径无效或 Gemini CLI 不可执行");
+      } else {
+        setGeminiPathError(null);
+      }
+    } catch (error) {
+      setGeminiPathValid(false);
+      setGeminiPathError("验证路径时出错");
+    } finally {
+      setValidatingGeminiPath(false);
+    }
+  };
+
+  /**
+   * Handle setting custom Gemini path
+   */
+  const handleSetGeminiCustomPath = async () => {
+    if (!customGeminiPath.trim()) {
+      setGeminiPathError("请输入有效的路径");
+      return;
+    }
+
+    // First validate the path
+    setValidatingGeminiPath(true);
+    try {
+      const isValid = await api.validateGeminiPath(customGeminiPath.trim());
+      if (!isValid) {
+        setGeminiPathError("路径无效或 Gemini CLI 不可执行");
+        setGeminiPathValid(false);
+        return;
+      }
+
+      // Path is valid, save it
+      await api.setGeminiCustomPath(customGeminiPath.trim());
+
+      // Update state
+      setGeminiPathValid(true);
+      setGeminiPathError(null);
+      setIsGeminiCustomPathMode(false);
+      setCustomGeminiPath("");
+
+      // Show success message
+      setToast({ message: "自定义 Gemini CLI 路径设置成功", type: "success" });
+
+      // Trigger Gemini status refresh
+      window.dispatchEvent(new CustomEvent('refresh-gemini-status'));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "设置自定义路径失败";
+      setGeminiPathError(errorMessage);
+    } finally {
+      setValidatingGeminiPath(false);
+    }
+  };
+
+  /**
+   * Handle clearing custom Gemini path
+   */
+  const handleClearGeminiCustomPath = async () => {
+    try {
+      await api.setGeminiCustomPath(null);
+
+      // Exit custom mode
+      setIsGeminiCustomPathMode(false);
+      setCustomGeminiPath("");
+      setGeminiPathError(null);
+      setGeminiPathValid(null);
+
+      // Show success message
+      setToast({ message: "已恢复 Gemini 自动检测", type: "success" });
+
+      // Trigger Gemini status refresh
+      window.dispatchEvent(new CustomEvent('refresh-gemini-status'));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "清除自定义路径失败";
+      setToast({ message: errorMessage, type: "error" });
+    }
+  };
+
   return (
     <Card className="p-6 space-y-6">
       <div>
         <h3 className="text-base font-semibold mb-4">{t('settings.general')}</h3>
-        
+
         <div className="space-y-4">
           {/* Language Selector */}
           <LanguageSelector />
@@ -263,7 +361,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onCheckedChange={(checked) => updateSetting("includeCoAuthoredBy", checked)}
             />
           </div>
-          
+
           {/* Verbose Output */}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5 flex-1">
@@ -293,7 +391,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onCheckedChange={handleRewindGitOpsToggle}
             />
           </div>
-          
+
           {/* Cleanup Period */}
           <div className="space-y-2">
             <Label htmlFor="cleanup">聊天记录保留天数</Label>
@@ -312,7 +410,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               本地保留聊天记录的时长（默认：30天）
             </p>
           </div>
-          
+
 
           {/* Custom Claude Path Configuration */}
           <div className="space-y-4">
@@ -359,7 +457,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                         <p className="text-xs text-red-500">{customPathError}</p>
                       )}
                     </div>
-                    
+
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -376,7 +474,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                         恢复自动检测
                       </Button>
                     </div>
-                    
+
                     <div className="p-3 bg-muted rounded-md">
                       <div className="flex items-start gap-2">
                         <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
@@ -502,6 +600,122 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                             <li>C:\Users\用户名\AppData\Roaming\npm\codex.ps1</li>
                             <li>D:\nodejs\node_global\codex.ps1</li>
                             <li>您的自定义 npm 全局安装目录</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Custom Gemini Path Configuration */}
+          <div className="space-y-4">
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <Label className="text-sm font-medium">自定义 Gemini CLI 路径</Label>
+                  <p className="text-xs text-muted-foreground">
+                    手动指定自定义的 Gemini CLI 可执行文件路径
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsGeminiCustomPathMode(!isGeminiCustomPathMode);
+                    setGeminiPathError(null);
+                    setCustomGeminiPath("");
+                    setGeminiPathValid(null);
+                  }}
+                >
+                  {isGeminiCustomPathMode ? "取消" : "设置自定义路径"}
+                </Button>
+              </div>
+
+              <AnimatePresence>
+                {isGeminiCustomPathMode && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-3"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="例如：/usr/local/bin/gemini 或 gemini"
+                          value={customGeminiPath}
+                          onChange={(e) => {
+                            setCustomGeminiPath(e.target.value);
+                            setGeminiPathError(null);
+                            setGeminiPathValid(null);
+                          }}
+                          onBlur={() => {
+                            if (customGeminiPath.trim()) {
+                              handleValidateGeminiPath(customGeminiPath);
+                            }
+                          }}
+                          className={cn(
+                            "flex-1",
+                            geminiPathError && "border-red-500",
+                            geminiPathValid === true && "border-green-500"
+                          )}
+                        />
+                        {validatingGeminiPath && (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        )}
+                        {!validatingGeminiPath && geminiPathValid === true && (
+                          <span className="text-green-500 text-sm flex items-center">✓ 有效</span>
+                        )}
+                        {!validatingGeminiPath && geminiPathValid === false && (
+                          <span className="text-red-500 text-sm flex items-center">✗ 无效</span>
+                        )}
+                      </div>
+                      {geminiPathError && (
+                        <p className="text-xs text-red-500">{geminiPathError}</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleSetGeminiCustomPath}
+                        disabled={!customGeminiPath.trim() || validatingGeminiPath}
+                      >
+                        {validatingGeminiPath ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                            验证中...
+                          </>
+                        ) : (
+                          "设置路径"
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearGeminiCustomPath}
+                      >
+                        恢复自动检测
+                      </Button>
+                    </div>
+
+                    <div className="p-3 bg-muted rounded-md">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs text-muted-foreground">
+                            <strong>提示:</strong> Gemini CLI 通常通过 npm 全局安装。
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            常见路径：
+                          </p>
+                          <ul className="text-xs text-muted-foreground mt-1 ml-3 list-disc">
+                            <li>/usr/local/bin/gemini (macOS/Linux)</li>
+                            <li>~/.npm-global/bin/gemini</li>
+                            <li>C:\Users\用户名\AppData\Roaming\npm\gemini.cmd (Windows)</li>
                           </ul>
                         </div>
                       </div>

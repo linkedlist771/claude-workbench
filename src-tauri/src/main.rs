@@ -76,7 +76,7 @@ use commands::codex::{
     list_codex_sessions, delete_codex_session,
     load_codex_session_history, get_codex_prompt_list, check_codex_rewind_capabilities,
     check_codex_availability,
-    set_custom_codex_path, get_codex_path, clear_custom_codex_path,
+    set_custom_codex_path, get_codex_path, clear_custom_codex_path, validate_codex_path_cmd,
     // Codex mode configuration
     get_codex_mode_config, set_codex_mode_config,
     // Codex rewind commands
@@ -102,6 +102,8 @@ use commands::gemini::{
     get_gemini_provider_presets, get_current_gemini_provider_config,
     switch_gemini_provider, add_gemini_provider_config, update_gemini_provider_config,
     delete_gemini_provider_config, clear_gemini_provider_config, test_gemini_provider_connection,
+    // Gemini custom path commands
+    set_custom_gemini_path, get_gemini_path, clear_custom_gemini_path, validate_gemini_path_cmd,
     GeminiProcessState,
 };
 use process::ProcessRegistryState;
@@ -391,6 +393,7 @@ fn main() {
             set_custom_codex_path,
             get_codex_path,
             clear_custom_codex_path,
+            validate_codex_path_cmd,
             // Codex Provider Management
             get_codex_provider_presets,
             get_current_codex_config,
@@ -441,6 +444,11 @@ fn main() {
             delete_gemini_provider_config,
             clear_gemini_provider_config,
             test_gemini_provider_connection,
+            // Gemini custom path commands
+            set_custom_gemini_path,
+            get_gemini_path,
+            clear_custom_gemini_path,
+            validate_gemini_path_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

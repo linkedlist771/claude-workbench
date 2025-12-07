@@ -461,3 +461,184 @@ pub fn delete_session(project_path: &str, session_id: &str) -> Result<(), String
 
     Err(format!("Session {} not found", session_id))
 }
+
+// ============================================================================
+// Custom Gemini CLI Path Management
+// ============================================================================
+
+use tauri::AppHandle;
+use tauri::Manager;
+use tokio::process::Command;
+use crate::commands::claude::apply_no_window_async;
+use crate::commands::codex::config::{
+    expand_user_path, update_binary_override, clear_binary_override, get_binary_override
+};
+
+/// Set custom Gemini CLI path, supports ~ expansion and relative paths
+#[tauri::command]
+pub async fn set_custom_gemini_path(app: AppHandle, custom_path: String) -> Result<(), String> {
+    log::info!("[Gemini] Setting custom path: {}", custom_path);
+
+    let expanded_path = expand_user_path(&custom_path)?;
+    if !expanded_path.exists() {
+        return Err("File does not exist".to_string());
+    }
+    if !expanded_path.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+
+    let path_str = expanded_path
+        .to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())?
+        .to_string();
+
+    // Validate by running --version
+    let mut cmd = Command::new(&path_str);
+    cmd.arg("--version");
+    apply_no_window_async(&mut cmd);
+
+    match cmd.output().await {
+        Ok(output) => {
+            if !output.status.success() {
+                return Err("File is not a valid Gemini CLI executable".to_string());
+            }
+        }
+        Err(e) => return Err(format!("Failed to test Gemini CLI: {}", e)),
+    }
+
+    // Write to binaries.json for unified detection
+    if let Err(e) = update_binary_override("gemini", &path_str) {
+        log::warn!("[Gemini] Failed to update binaries.json: {}", e);
+    }
+
+    // Also store in app_settings for compatibility
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let db_path = app_data_dir.join("agents.db");
+        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )",
+                [],
+            );
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
+                rusqlite::params!["gemini_binary_path", path_str],
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn read_custom_gemini_path_from_db(app: &AppHandle) -> Option<String> {
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let db_path = app_data_dir.join("agents.db");
+        if db_path.exists() {
+            if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                if let Ok(val) = conn.query_row(
+                    "SELECT value FROM app_settings WHERE key = 'gemini_binary_path'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                ) {
+                    return Some(val);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get current Gemini CLI path (custom first, then runtime detection)
+#[tauri::command]
+pub async fn get_gemini_path(app: AppHandle) -> Result<String, String> {
+    // 1. Check binaries.json override
+    if let Some(override_path) = get_binary_override("gemini") {
+        if std::path::Path::new(&override_path).exists() {
+            return Ok(override_path);
+        }
+    }
+    
+    // 2. Check database
+    if let Some(db_path) = read_custom_gemini_path_from_db(&app) {
+        if std::path::Path::new(&db_path).exists() {
+            return Ok(db_path);
+        }
+    }
+
+    // 3. Use built-in detection (call find_gemini_binary from session.rs)
+    crate::commands::gemini::session::find_gemini_binary()
+}
+
+/// Clear custom Gemini CLI path, restore auto detection
+#[tauri::command]
+pub async fn clear_custom_gemini_path(app: AppHandle) -> Result<(), String> {
+    // Clear from database
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let db_path = app_data_dir.join("agents.db");
+        if db_path.exists() {
+            if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                let _ = conn.execute(
+                    "DELETE FROM app_settings WHERE key = 'gemini_binary_path'",
+                    [],
+                );
+            }
+        }
+    }
+
+    // Clear from binaries.json
+    if let Err(e) = clear_binary_override("gemini") {
+        log::warn!("[Gemini] Failed to clear binaries.json override: {}", e);
+    }
+
+    Ok(())
+}
+
+/// Validate a Gemini CLI path without saving it
+/// Returns true if the path is a valid Gemini CLI executable
+#[tauri::command]
+pub async fn validate_gemini_path_cmd(path: String) -> Result<bool, String> {
+    log::info!("[Gemini] Validating path: {}", path);
+
+    // Expand ~ and relative paths
+    let expanded_path = expand_user_path(&path)?;
+
+    // Check if file exists
+    if !expanded_path.exists() {
+        log::warn!("[Gemini] Path does not exist: {:?}", expanded_path);
+        return Ok(false);
+    }
+
+    // Check if it's a file (not a directory)
+    if !expanded_path.is_file() {
+        log::warn!("[Gemini] Path is not a file: {:?}", expanded_path);
+        return Ok(false);
+    }
+
+    let path_str = expanded_path
+        .to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())?
+        .to_string();
+
+    // Test if it's actually Gemini CLI by running --version
+    let mut cmd = Command::new(&path_str);
+    cmd.arg("--version");
+    apply_no_window_async(&mut cmd);
+
+    match cmd.output().await {
+        Ok(output) => {
+            if output.status.success() {
+                log::info!("[Gemini] Path validated successfully: {}", path_str);
+                Ok(true)
+            } else {
+                log::warn!("[Gemini] Path is not a valid Gemini CLI: {} (exit code: {:?})", path_str, output.status.code());
+                Ok(false)
+            }
+        }
+        Err(e) => {
+            log::warn!("[Gemini] Failed to execute path: {} - {}", path_str, e);
+            Ok(false)
+        }
+    }
+}
