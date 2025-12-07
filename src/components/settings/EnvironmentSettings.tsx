@@ -46,7 +46,7 @@ export const EnvironmentSettings: React.FC<EnvironmentSettingsProps> = ({
             添加变量
           </Button>
         </div>
-        
+
         <div className="space-y-3">
           {envVars.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">
@@ -73,7 +73,7 @@ export const EnvironmentSettings: React.FC<EnvironmentSettingsProps> = ({
                       className="scale-75"
                     />
                   </div>
-                  
+
                   <Input
                     placeholder="KEY"
                     value={envVar.key}
@@ -103,7 +103,7 @@ export const EnvironmentSettings: React.FC<EnvironmentSettingsProps> = ({
             </>
           )}
         </div>
-        
+
         <div className="pt-2 space-y-2">
           <p className="text-xs text-muted-foreground">
             <strong>常用变量:</strong>

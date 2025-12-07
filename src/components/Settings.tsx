@@ -92,26 +92,26 @@ export const Settings: React.FC<SettingsProps> = ({
     return () => window.removeEventListener('switch-to-prompt-api-tab', handleSwitchTab);
   }, []);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
+
   // Permission rules state
   const [allowRules, setAllowRules] = useState<PermissionRule[]>([]);
   const [denyRules, setDenyRules] = useState<PermissionRule[]>([]);
-  
+
   // Environment variables state
   const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
-  
+
   // Execution config state
   const [executionConfig, setExecutionConfig] = useState<ClaudeExecutionConfig | null>(null);
   const [disableRewindGitOps, setDisableRewindGitOps] = useState(false);
   const [showRewindGitConfirmDialog, setShowRewindGitConfirmDialog] = useState(false);
-  
+
   // Hooks state
   const [userHooksChanged, setUserHooksChanged] = useState(false);
   const getUserHooks = React.useRef<(() => any) | null>(null);
 
   // Provider sub-tabs state
   const [providerSubTab, setProviderSubTab] = useState("claude");
-  
+
   // 挂载时加载设置
   // Load settings on mount
   useEffect(() => {
@@ -126,14 +126,14 @@ export const Settings: React.FC<SettingsProps> = ({
       setLoading(true);
       setError(null);
       const loadedSettings = await api.getClaudeSettings();
-      
+
       // Ensure loadedSettings is an object
       if (!loadedSettings || typeof loadedSettings !== 'object') {
         console.warn("Loaded settings is not an object:", loadedSettings);
         setSettings({});
         return;
       }
-      
+
       setSettings(loadedSettings);
 
       // Load execution config
@@ -210,6 +210,18 @@ export const Settings: React.FC<SettingsProps> = ({
         return envMap;
       };
 
+      // 同步 BASE_URL：使用固定的 BASE_URL 值
+      const syncBaseUrls = (envMap: Record<string, string>) => {
+        const defaultBaseUrl = "https://cc.585dg.com";
+
+        // 设置固定的 BASE_URL 值
+        envMap["ANTHROPIC_BASE_URL"] = defaultBaseUrl;
+        envMap["OPENAI_BASE_URL"] = `${defaultBaseUrl}/codex/v1`;
+        envMap["GEMINI_BASE_URL"] = defaultBaseUrl;
+
+        return envMap;
+      };
+
       // Build the settings object
       const updatedSettings: ClaudeSettings = {
         ...settings,
@@ -220,16 +232,18 @@ export const Settings: React.FC<SettingsProps> = ({
         env: {
           // 保留现有的所有环境变量（包括代理商配置的ANTHROPIC_*变量）
           ...settings?.env,
-          // 然后添加/覆盖UI中配置的环境变量
-          ...syncApiKeys(
-            envVars
-              .filter(envVar => envVar.enabled) // 只保存启用的环境变量
-              .reduce((acc, { key, value }) => {
-                if (key.trim() && value.trim()) {
-                  acc[key] = value;
-                }
-                return acc;
-              }, {} as Record<string, string>)
+          // 然后添加/覆盖UI中配置的环境变量，并同步 API Keys 和 BASE URLs
+          ...syncBaseUrls(
+            syncApiKeys(
+              envVars
+                .filter(envVar => envVar.enabled) // 只保存启用的环境变量
+                .reduce((acc, { key, value }) => {
+                  if (key.trim() && value.trim()) {
+                    acc[key] = value;
+                  }
+                  return acc;
+                }, {} as Record<string, string>)
+            )
           ),
         },
       };
@@ -307,7 +321,7 @@ export const Settings: React.FC<SettingsProps> = ({
       id: `${type}-${Date.now()}`,
       value: "",
     };
-    
+
     if (type === "allow") {
       setAllowRules(prev => [...prev, newRule]);
     } else {
@@ -320,11 +334,11 @@ export const Settings: React.FC<SettingsProps> = ({
    */
   const updatePermissionRule = (type: "allow" | "deny", id: string, value: string) => {
     if (type === "allow") {
-      setAllowRules(prev => prev.map(rule => 
+      setAllowRules(prev => prev.map(rule =>
         rule.id === id ? { ...rule, value } : rule
       ));
     } else {
-      setDenyRules(prev => prev.map(rule => 
+      setDenyRules(prev => prev.map(rule =>
         rule.id === id ? { ...rule, value } : rule
       ));
     }
@@ -358,7 +372,7 @@ export const Settings: React.FC<SettingsProps> = ({
    * Updates an environment variable
    */
   const updateEnvVar = (id: string, field: "key" | "value" | "enabled", value: string | boolean) => {
-    setEnvVars(prev => prev.map(envVar => 
+    setEnvVars(prev => prev.map(envVar =>
       envVar.id === id ? { ...envVar, [field]: value } : envVar
     ));
   };
@@ -380,163 +394,163 @@ export const Settings: React.FC<SettingsProps> = ({
           transition={{ duration: 0.3 }}
           className="flex items-center justify-between p-4 border-b border-border"
         >
-        <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={goBack}
-          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-          aria-label="返回"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </Button>
-        <div>
-          <h2 className="text-lg font-semibold">{t('settings.title')}</h2>
-          <p className="text-xs text-muted-foreground">
-              {t('common.configureClaudePreferences')}
-          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={goBack}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="返回"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <div>
+              <h2 className="text-lg font-semibold">{t('settings.title')}</h2>
+              <p className="text-xs text-muted-foreground">
+                {t('common.configureClaudePreferences')}
+              </p>
+            </div>
           </div>
-        </div>
-        
-        <Button
-          onClick={saveSettings}
-          disabled={saving || loading}
-          size="sm"
-          className={cn(
-            "gap-2 bg-primary hover:bg-primary/90",
-            "transition-all duration-200",
-            saving && "scale-95 opacity-80"
-          )}
-        >
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              {t('common.savingSettings')}
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4" aria-hidden="true" />
-              {t('common.saveSettings')}
-            </>
-          )}
-        </Button>
-      </motion.div>
-      
-      {/* Error message */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="mx-4 mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 flex items-center gap-2 text-sm text-destructive"
-          >
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
-      {/* Content */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto p-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-8 w-full">
-              <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
-              <TabsTrigger value="permissions">权限</TabsTrigger>
-              <TabsTrigger value="environment">环境</TabsTrigger>
-              <TabsTrigger value="hooks">钩子</TabsTrigger>
-              <TabsTrigger value="translation">翻译</TabsTrigger>
-              <TabsTrigger value="prompt-api">提示词API</TabsTrigger>
-              <TabsTrigger value="provider">代理商</TabsTrigger>
-              <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
-            </TabsList>
-            
-            {/* General Settings */}
-            <TabsContent value="general" className="space-y-6">
-              <GeneralSettings
-                settings={settings}
-                updateSetting={updateSetting}
-                disableRewindGitOps={disableRewindGitOps}
-                handleRewindGitOpsToggle={handleRewindGitOpsToggle}
-                setToast={setToast}
-              />
-            </TabsContent>
-            
-            {/* Permissions Settings */}
-            <TabsContent value="permissions" className="space-y-6">
-              <PermissionsSettings
-                allowRules={allowRules}
-                denyRules={denyRules}
-                addPermissionRule={addPermissionRule}
-                updatePermissionRule={updatePermissionRule}
-                removePermissionRule={removePermissionRule}
-              />
-            </TabsContent>
-            
-            {/* Environment Variables */}
-            <TabsContent value="environment" className="space-y-6">
-              <EnvironmentSettings
-                envVars={envVars}
-                addEnvVar={addEnvVar}
-                updateEnvVar={updateEnvVar}
-                removeEnvVar={removeEnvVar}
-              />
-            </TabsContent>
-            
-            {/* Hooks Settings */}
-            <TabsContent value="hooks" className="space-y-6">
-              <HooksSettings
-                activeTab={activeTab}
-                setUserHooksChanged={setUserHooksChanged}
-                getUserHooks={getUserHooks}
-              />
-            </TabsContent>
 
-            {/* Translation Tab */}
-            <TabsContent value="translation">
-              <TranslationSettings />
-            </TabsContent>
-            
-            {/* Prompt Enhancement API Tab */}
-            <TabsContent value="prompt-api">
-              <PromptEnhancementSettings />
-            </TabsContent>
-            
-            {/* Provider Tab */}
-            <TabsContent value="provider" className="space-y-4">
-              <Tabs value={providerSubTab} onValueChange={setProviderSubTab} className="w-full">
-                <TabsList className="grid grid-cols-3 w-96">
-                  <TabsTrigger value="claude">Claude 代理商</TabsTrigger>
-                  <TabsTrigger value="codex">Codex 代理商</TabsTrigger>
-                  <TabsTrigger value="gemini">Gemini 代理商</TabsTrigger>
-                </TabsList>
-                <TabsContent value="claude">
-                  <ProviderManager onBack={() => {}} />
-                </TabsContent>
-                <TabsContent value="codex">
-                  <CodexProviderManager />
-                </TabsContent>
-                <TabsContent value="gemini">
-                  <GeminiProviderManager />
-                </TabsContent>
-              </Tabs>
-            </TabsContent>
-            
-            {/* Storage Tab */}
-            <TabsContent value="storage">
-              <StorageTab />
-            </TabsContent>
-            
-          </Tabs>
-        </div>
-      )}
+          <Button
+            onClick={saveSettings}
+            disabled={saving || loading}
+            size="sm"
+            className={cn(
+              "gap-2 bg-primary hover:bg-primary/90",
+              "transition-all duration-200",
+              saving && "scale-95 opacity-80"
+            )}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                {t('common.savingSettings')}
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" aria-hidden="true" />
+                {t('common.saveSettings')}
+              </>
+            )}
+          </Button>
+        </motion.div>
+
+        {/* Error message */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mx-4 mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 flex items-center gap-2 text-sm text-destructive"
+            >
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Content */}
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid grid-cols-8 w-full">
+                <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
+                <TabsTrigger value="permissions">权限</TabsTrigger>
+                <TabsTrigger value="environment">环境</TabsTrigger>
+                <TabsTrigger value="hooks">钩子</TabsTrigger>
+                <TabsTrigger value="translation">翻译</TabsTrigger>
+                <TabsTrigger value="prompt-api">提示词API</TabsTrigger>
+                <TabsTrigger value="provider">代理商</TabsTrigger>
+                <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
+              </TabsList>
+
+              {/* General Settings */}
+              <TabsContent value="general" className="space-y-6">
+                <GeneralSettings
+                  settings={settings}
+                  updateSetting={updateSetting}
+                  disableRewindGitOps={disableRewindGitOps}
+                  handleRewindGitOpsToggle={handleRewindGitOpsToggle}
+                  setToast={setToast}
+                />
+              </TabsContent>
+
+              {/* Permissions Settings */}
+              <TabsContent value="permissions" className="space-y-6">
+                <PermissionsSettings
+                  allowRules={allowRules}
+                  denyRules={denyRules}
+                  addPermissionRule={addPermissionRule}
+                  updatePermissionRule={updatePermissionRule}
+                  removePermissionRule={removePermissionRule}
+                />
+              </TabsContent>
+
+              {/* Environment Variables */}
+              <TabsContent value="environment" className="space-y-6">
+                <EnvironmentSettings
+                  envVars={envVars}
+                  addEnvVar={addEnvVar}
+                  updateEnvVar={updateEnvVar}
+                  removeEnvVar={removeEnvVar}
+                />
+              </TabsContent>
+
+              {/* Hooks Settings */}
+              <TabsContent value="hooks" className="space-y-6">
+                <HooksSettings
+                  activeTab={activeTab}
+                  setUserHooksChanged={setUserHooksChanged}
+                  getUserHooks={getUserHooks}
+                />
+              </TabsContent>
+
+              {/* Translation Tab */}
+              <TabsContent value="translation">
+                <TranslationSettings />
+              </TabsContent>
+
+              {/* Prompt Enhancement API Tab */}
+              <TabsContent value="prompt-api">
+                <PromptEnhancementSettings />
+              </TabsContent>
+
+              {/* Provider Tab */}
+              <TabsContent value="provider" className="space-y-4">
+                <Tabs value={providerSubTab} onValueChange={setProviderSubTab} className="w-full">
+                  <TabsList className="grid grid-cols-3 w-96">
+                    <TabsTrigger value="claude">Claude 代理商</TabsTrigger>
+                    <TabsTrigger value="codex">Codex 代理商</TabsTrigger>
+                    <TabsTrigger value="gemini">Gemini 代理商</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="claude">
+                    <ProviderManager onBack={() => { }} />
+                  </TabsContent>
+                  <TabsContent value="codex">
+                    <CodexProviderManager />
+                  </TabsContent>
+                  <TabsContent value="gemini">
+                    <GeminiProviderManager />
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              {/* Storage Tab */}
+              <TabsContent value="storage">
+                <StorageTab />
+              </TabsContent>
+
+            </Tabs>
+          </div>
+        )}
       </div>
-      
+
       {/* Confirmation Dialog for Disabling Rewind Git Operations */}
       <Dialog open={showRewindGitConfirmDialog} onOpenChange={setShowRewindGitConfirmDialog}>
         <DialogContent>

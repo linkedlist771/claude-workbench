@@ -210,7 +210,7 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
       // Record prompt sent (save Git state before sending)
       // Only record real user input, exclude auto Warmup and Skills messages
       let recordedPromptIndex = -1;
-      const isUserInitiated = !prompt.includes('Warmup') 
+      const isUserInitiated = !prompt.includes('Warmup')
         && !prompt.includes('<command-name>')
         && !prompt.includes('Launching skill:');
       const codexPendingInfo = executionEngine === 'codex' ? {
@@ -225,7 +225,7 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
         promptText: prompt,
         promptIndex: undefined as number | undefined,
       } : undefined;
-      
+
       // 对于已有会话，立即记录；对于新会话，在收到 session_id 后记录
       if (effectiveSession && isUserInitiated) {
         try {
@@ -323,6 +323,21 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
               return;
             }
             processedCodexMessages.add(messageId);
+
+            // 🔧 FIX: Detect turn.completed event to trigger completion
+            // Codex CLI doesn't exit immediately after response, so we need to detect turn completion
+            try {
+              const parsed = JSON.parse(payload);
+              if (parsed.type === 'turn.completed') {
+                console.log('[usePromptExecution] Detected turn.completed, triggering completion');
+                // Use setTimeout to ensure this runs after current message processing
+                setTimeout(() => {
+                  processCodexComplete();
+                }, 100);
+              }
+            } catch {
+              // Ignore parse errors for completion detection
+            }
 
             // 🔧 FIX: 使用会话级别的转换器实例
             const message = sessionCodexConverter.convertEvent(payload);
@@ -838,60 +853,291 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
           //     generic ones to prevent duplicate handling.
           // --------------------------------------------------------------------
 
-        let currentSessionId: string | null = claudeSessionId || effectiveSession?.id || null;
+          let currentSessionId: string | null = claudeSessionId || effectiveSession?.id || null;
 
-        // 🔧 FIX: Track whether we've switched to session-specific listeners
-        // Only ignore generic messages AFTER we've attached session-specific listeners
-        let hasAttachedSessionListeners = false;
+          // 🔧 FIX: Track whether we've switched to session-specific listeners
+          // Only ignore generic messages AFTER we've attached session-specific listeners
+          let hasAttachedSessionListeners = false;
 
-        // 🔧 FIX: Track processed message IDs to prevent duplicates from global and session-specific channels
-        const processedClaudeMessages = new Set<string>();
+          // 🔧 FIX: Track processed message IDs to prevent duplicates from global and session-specific channels
+          const processedClaudeMessages = new Set<string>();
 
-        // 🔧 FIX: Track pending prompt recording Promise to avoid race condition
-        let pendingClaudePromptRecordingPromise: Promise<void> | null = null;
+          // 🔧 FIX: Track pending prompt recording Promise to avoid race condition
+          let pendingClaudePromptRecordingPromise: Promise<void> | null = null;
 
-        // Helper function to generate message ID for deduplication
-        const getClaudeMessageId = (payload: string): string => {
-          try {
-            const msg = JSON.parse(payload) as ClaudeStreamMessage;
-            // Use message ID if available, otherwise use payload hash
-            if (msg.id) return `claude-${msg.id}`;
-            if (msg.timestamp) return `claude-${msg.timestamp}-${msg.type}`;
-          } catch {
-            // Fall through to hash-based ID
-          }
-          // Fallback: use payload hash
-          let hash = 0;
-          for (let i = 0; i < payload.length; i++) {
-            const char = payload.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-          }
-          return `claude-${hash}`;
-        };
-
-        // ====================================================================
-        // Helper: Attach Session-Specific Listeners
-        // ====================================================================
-        const attachSessionSpecificListeners = async (sid: string) => {
-          console.log('[usePromptExecution] Attaching session-specific listeners for', sid);
-
-          // 🔧 FIX: Mark that we've attached session-specific listeners
-          hasAttachedSessionListeners = true;
-
-          const specificOutputUnlisten = await listen<string>(`claude-output:${sid}`, async (evt) => {
-            handleStreamMessage(evt.payload, userInputTranslation || undefined);
-            
-            // Handle user message recording in session-specific listener
+          // Helper function to generate message ID for deduplication
+          const getClaudeMessageId = (payload: string): string => {
             try {
-              const msg = JSON.parse(evt.payload) as ClaudeStreamMessage;
-              
-              // 在收到第一条 user 消息后记录
-              if (msg.type === 'user' && !hasRecordedPrompt && isUserInitiated) {
+              const msg = JSON.parse(payload) as ClaudeStreamMessage;
+              // Use message ID if available, otherwise use payload hash
+              if (msg.id) return `claude-${msg.id}`;
+              if (msg.timestamp) return `claude-${msg.timestamp}-${msg.type}`;
+            } catch {
+              // Fall through to hash-based ID
+            }
+            // Fallback: use payload hash
+            let hash = 0;
+            for (let i = 0; i < payload.length; i++) {
+              const char = payload.charCodeAt(i);
+              hash = ((hash << 5) - hash) + char;
+              hash = hash & hash;
+            }
+            return `claude-${hash}`;
+          };
+
+          // ====================================================================
+          // Helper: Attach Session-Specific Listeners
+          // ====================================================================
+          const attachSessionSpecificListeners = async (sid: string) => {
+            console.log('[usePromptExecution] Attaching session-specific listeners for', sid);
+
+            // 🔧 FIX: Mark that we've attached session-specific listeners
+            hasAttachedSessionListeners = true;
+
+            const specificOutputUnlisten = await listen<string>(`claude-output:${sid}`, async (evt) => {
+              handleStreamMessage(evt.payload, userInputTranslation || undefined);
+
+              // Handle user message recording in session-specific listener
+              try {
+                const msg = JSON.parse(evt.payload) as ClaudeStreamMessage;
+
+                // 在收到第一条 user 消息后记录
+                if (msg.type === 'user' && !hasRecordedPrompt && isUserInitiated) {
+                  // 检查这是否是我们发送的那条消息（通过内容匹配）
+                  let isOurMessage = false;
+                  const msgContent: any = msg.message?.content;
+
+                  if (msgContent) {
+                    if (typeof msgContent === 'string') {
+                      const contentStr = msgContent as string;
+                      isOurMessage = contentStr.includes(prompt) || prompt.includes(contentStr);
+                    } else if (Array.isArray(msgContent)) {
+                      const textContent = msgContent
+                        .filter((item: any) => item.type === 'text')
+                        .map((item: any) => item.text)
+                        .join('');
+                      isOurMessage = textContent.includes(prompt) || prompt.includes(textContent);
+                    }
+                  }
+
+                  if (isOurMessage) {
+                    const projectId = extractedSessionInfo?.projectId || projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+                    // 🔧 FIX: Store Promise to allow processComplete to wait for it
+                    pendingClaudePromptRecordingPromise = (async () => {
+                      try {
+                        // 添加延迟以确保文件写入完成
+                        await new Promise(resolve => setTimeout(resolve, 100));
+
+                        recordedPromptIndex = await api.recordPromptSent(
+                          sid,
+                          projectId,
+                          projectPath,
+                          prompt
+                        );
+                        hasRecordedPrompt = true;
+                        console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(session-specific listener)');
+                      } catch (err) {
+                        console.error('[Prompt Revert] [ERROR] Failed to record prompt:', err);
+                      }
+                    })();
+                  }
+                }
+              } catch {
+                /* ignore parse errors */
+              }
+            });
+
+            const specificErrorUnlisten = await listen<string>(`claude-error:${sid}`, (evt) => {
+              console.error('Claude error (scoped):', evt.payload);
+              setError(evt.payload);
+            });
+
+            const specificCompleteUnlisten = await listen<boolean>(`claude-complete:${sid}`, (evt) => {
+              console.log('[usePromptExecution] Received claude-complete (scoped):', evt.payload);
+              processComplete();
+            });
+
+            // Replace existing unlisten refs with these new ones (after cleaning up)
+            unlistenRefs.current.forEach((u) => u && typeof u === 'function' && u());
+            unlistenRefs.current = [specificOutputUnlisten, specificErrorUnlisten, specificCompleteUnlisten];
+          };
+
+          // ====================================================================
+          // Helper: Process Stream Message
+          // ====================================================================
+          async function handleStreamMessage(payload: string, currentTranslationResult?: TranslationResult) {
+            try {
+              // Don't process if component unmounted
+              if (!isMountedRef.current) return;
+
+              // 🔧 FIX: Deduplicate messages to prevent duplicate processing
+              // This can happen when both global and session-specific listeners receive the same message
+              const messageId = getClaudeMessageId(payload);
+              if (processedClaudeMessages.has(messageId)) {
+                console.log('[usePromptExecution] Skipping duplicate Claude message:', messageId);
+                return;
+              }
+              processedClaudeMessages.add(messageId);
+
+              // Store raw JSONL
+              setRawJsonlOutput((prev) => [...prev, payload]);
+
+              const message = JSON.parse(payload) as ClaudeStreamMessage;
+
+              // Use the shared translation function for consistency
+              await processMessageWithTranslation(message, payload, currentTranslationResult);
+
+            } catch (err) {
+              console.error('Failed to parse message:', err, payload);
+            }
+          }
+
+          // ====================================================================
+          // Helper: Process Completion
+          // ====================================================================
+          const processComplete = async () => {
+            // Calculate API execution time
+            const apiDuration = (Date.now() - apiStartTime) / 1000; // seconds
+            console.log('[usePromptExecution] API duration:', apiDuration.toFixed(1), 'seconds');
+
+            // 🔧 FIX: Wait for pending prompt recording to complete (race condition fix)
+            if (pendingClaudePromptRecordingPromise) {
+              console.log('[usePromptExecution] Waiting for pending Claude prompt recording to complete...');
+              await pendingClaudePromptRecordingPromise;
+              pendingClaudePromptRecordingPromise = null;
+            }
+
+            // Mark prompt as completed (record Git state after completion)
+            if (recordedPromptIndex >= 0) {
+              // Use currentSessionId and extractedSessionInfo for new sessions
+              const sessionId = effectiveSession?.id || currentSessionId;
+              const projectId = effectiveSession?.project_id || extractedSessionInfo?.projectId || projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+
+              if (sessionId && projectId) {
+                api.markPromptCompleted(
+                  sessionId,
+                  projectId,
+                  projectPath,
+                  recordedPromptIndex
+                ).then(() => {
+                  console.log('[Prompt Revert] Marked prompt # as completed', recordedPromptIndex);
+                }).catch(err => {
+                  console.error('[Prompt Revert] Failed to mark completed:', err);
+                });
+              } else {
+                console.warn('[Prompt Revert] Cannot mark completed: missing sessionId or projectId');
+              }
+            }
+
+            setIsLoading(false);
+            hasActiveSessionRef.current = false;
+            isListeningRef.current = false;
+
+            // 🆕 Clean up listeners to prevent memory leak
+            unlistenRefs.current.forEach(u => u && typeof u === 'function' && u());
+            unlistenRefs.current = [];
+
+            // Reset currentSessionId to allow detection of new session_id
+            currentSessionId = null;
+            console.log('[usePromptExecution] Session completed - reset session state for new input');
+
+            // Process queued prompts after completion
+            if (queuedPromptsRef.current.length > 0) {
+              const [nextPrompt, ...remainingPrompts] = queuedPromptsRef.current;
+              setQueuedPrompts(remainingPrompts);
+
+              // Small delay to ensure UI updates
+              setTimeout(() => {
+                handleSendPrompt(nextPrompt.prompt, nextPrompt.model);
+              }, 100);
+            }
+          };
+
+          // Track if we've recorded the prompt for new sessions
+          let hasRecordedPrompt = recordedPromptIndex >= 0;
+
+          // ====================================================================
+          // Generic Listeners (Catch-all) - FIXED to prevent cross-session data leakage
+          // ====================================================================
+          const genericOutputUnlisten = await listen<string>('claude-output', async (event) => {
+            // 🔧 CRITICAL FIX: 只在尚未收到会话ID时处理全局事件
+            if (!hasActiveSessionRef.current) return;
+
+            // 🔒 CRITICAL FIX: Session Isolation - 严格隔离全局事件处理
+            // 问题: 多个标签页都监听全局 'claude-output',导致消息被多个会话接收
+            // 解决: 只在会话ID未知的早期阶段处理全局事件
+            if (hasAttachedSessionListeners) {
+              try {
+                const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
+                // 只处理新会话的 init 消息(session_id 不同)
+                if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== currentSessionId) {
+                  console.log('[usePromptExecution] Detected NEW session_id from generic listener:', msg.session_id);
+                  // Fall through to processing below
+                } else {
+                  // ⚠️ 忽略所有其他消息 - 应该由会话特定监听器处理
+                  console.log('[usePromptExecution] Ignoring global claude-output (session-specific listener active)');
+                  return;
+                }
+              } catch {
+                return;
+              }
+            }
+
+            // Attempt to extract session_id on the fly (for the very first init)
+            try {
+              const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
+
+              // Always process the message if we haven't established a session yet
+              // Or if it is the init message
+              handleStreamMessage(event.payload, userInputTranslation || undefined);
+
+              if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+                if (!currentSessionId || currentSessionId !== msg.session_id) {
+                  console.log('[usePromptExecution] Detected new session_id from generic listener:', msg.session_id);
+                  currentSessionId = msg.session_id;
+                  setClaudeSessionId(msg.session_id);
+
+                  // If we haven't extracted session info before, do it now
+                  if (!extractedSessionInfo) {
+                    const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+                    setExtractedSessionInfo({ sessionId: msg.session_id, projectId, engine: 'claude' });
+                  }
+
+                  // Record prompt after system:init (user message already written to JSONL)
+                  if (!hasRecordedPrompt && isUserInitiated) {
+                    const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+                    // 🔧 FIX: Store Promise to allow processComplete to wait for it
+                    pendingClaudePromptRecordingPromise = (async () => {
+                      try {
+                        // Delay 200ms to ensure file is written
+                        await new Promise(resolve => setTimeout(resolve, 200));
+
+                        recordedPromptIndex = await api.recordPromptSent(
+                          msg.session_id,
+                          projectId,
+                          projectPath,
+                          prompt
+                        );
+                        hasRecordedPrompt = true;
+                        console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(after system:init)');
+                      } catch (err) {
+                        console.error('[Prompt Revert] [ERROR] Failed to record prompt:', err);
+                      }
+                    })();
+                  }
+
+                  // Switch to session-specific listeners
+                  await attachSessionSpecificListeners(msg.session_id);
+                }
+              }
+
+              // Record after first user message (user message already written to JSONL)
+              // This ensures backend can correctly read and calculate index
+              if (msg.type === 'user' && !hasRecordedPrompt && isUserInitiated && currentSessionId) {
                 // 检查这是否是我们发送的那条消息（通过内容匹配）
                 let isOurMessage = false;
                 const msgContent: any = msg.message?.content;
-                
+
                 if (msgContent) {
                   if (typeof msgContent === 'string') {
                     const contentStr = msgContent as string;
@@ -904,7 +1150,7 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
                     isOurMessage = textContent.includes(prompt) || prompt.includes(textContent);
                   }
                 }
-                
+
                 if (isOurMessage) {
                   const projectId = extractedSessionInfo?.projectId || projectPath.replace(/[^a-zA-Z0-9]/g, '-');
                   // 🔧 FIX: Store Promise to allow processComplete to wait for it
@@ -914,13 +1160,13 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
                       await new Promise(resolve => setTimeout(resolve, 100));
 
                       recordedPromptIndex = await api.recordPromptSent(
-                        sid,
+                        currentSessionId,
                         projectId,
                         projectPath,
                         prompt
                       );
                       hasRecordedPrompt = true;
-                      console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(session-specific listener)');
+                      console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(after user message in JSONL)');
                     } catch (err) {
                       console.error('[Prompt Revert] [ERROR] Failed to record prompt:', err);
                     }
@@ -932,253 +1178,22 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
             }
           });
 
-          const specificErrorUnlisten = await listen<string>(`claude-error:${sid}`, (evt) => {
-            console.error('Claude error (scoped):', evt.payload);
+          const genericErrorUnlisten = await listen<string>('claude-error', (evt) => {
+            // 🔧 FIX: Only process if this tab has an active session
+            if (!hasActiveSessionRef.current) return;
+            console.error('Claude error:', evt.payload);
             setError(evt.payload);
           });
 
-          const specificCompleteUnlisten = await listen<boolean>(`claude-complete:${sid}`, (evt) => {
-            console.log('[usePromptExecution] Received claude-complete (scoped):', evt.payload);
+          const genericCompleteUnlisten = await listen<boolean>('claude-complete', (evt) => {
+            // 🔧 FIX: Only process if this tab has an active session
+            if (!hasActiveSessionRef.current) return;
+            console.log('[usePromptExecution] Received claude-complete (generic):', evt.payload);
             processComplete();
           });
 
-          // Replace existing unlisten refs with these new ones (after cleaning up)
-          unlistenRefs.current.forEach((u) => u && typeof u === 'function' && u());
-          unlistenRefs.current = [specificOutputUnlisten, specificErrorUnlisten, specificCompleteUnlisten];
-        };
-
-        // ====================================================================
-        // Helper: Process Stream Message
-        // ====================================================================
-        async function handleStreamMessage(payload: string, currentTranslationResult?: TranslationResult) {
-          try {
-            // Don't process if component unmounted
-            if (!isMountedRef.current) return;
-
-            // 🔧 FIX: Deduplicate messages to prevent duplicate processing
-            // This can happen when both global and session-specific listeners receive the same message
-            const messageId = getClaudeMessageId(payload);
-            if (processedClaudeMessages.has(messageId)) {
-              console.log('[usePromptExecution] Skipping duplicate Claude message:', messageId);
-              return;
-            }
-            processedClaudeMessages.add(messageId);
-
-            // Store raw JSONL
-            setRawJsonlOutput((prev) => [...prev, payload]);
-
-            const message = JSON.parse(payload) as ClaudeStreamMessage;
-
-            // Use the shared translation function for consistency
-            await processMessageWithTranslation(message, payload, currentTranslationResult);
-
-          } catch (err) {
-            console.error('Failed to parse message:', err, payload);
-          }
-        }
-
-        // ====================================================================
-        // Helper: Process Completion
-        // ====================================================================
-        const processComplete = async () => {
-          // Calculate API execution time
-          const apiDuration = (Date.now() - apiStartTime) / 1000; // seconds
-          console.log('[usePromptExecution] API duration:', apiDuration.toFixed(1), 'seconds');
-
-          // 🔧 FIX: Wait for pending prompt recording to complete (race condition fix)
-          if (pendingClaudePromptRecordingPromise) {
-            console.log('[usePromptExecution] Waiting for pending Claude prompt recording to complete...');
-            await pendingClaudePromptRecordingPromise;
-            pendingClaudePromptRecordingPromise = null;
-          }
-
-          // Mark prompt as completed (record Git state after completion)
-          if (recordedPromptIndex >= 0) {
-            // Use currentSessionId and extractedSessionInfo for new sessions
-            const sessionId = effectiveSession?.id || currentSessionId;
-            const projectId = effectiveSession?.project_id || extractedSessionInfo?.projectId || projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-            
-            if (sessionId && projectId) {
-              api.markPromptCompleted(
-                sessionId,
-                projectId,
-                projectPath,
-                recordedPromptIndex
-              ).then(() => {
-                console.log('[Prompt Revert] Marked prompt # as completed', recordedPromptIndex);
-              }).catch(err => {
-                console.error('[Prompt Revert] Failed to mark completed:', err);
-              });
-            } else {
-              console.warn('[Prompt Revert] Cannot mark completed: missing sessionId or projectId');
-            }
-          }
-
-          setIsLoading(false);
-          hasActiveSessionRef.current = false;
-          isListeningRef.current = false;
-
-          // 🆕 Clean up listeners to prevent memory leak
-          unlistenRefs.current.forEach(u => u && typeof u === 'function' && u());
-          unlistenRefs.current = [];
-
-          // Reset currentSessionId to allow detection of new session_id
-          currentSessionId = null;
-          console.log('[usePromptExecution] Session completed - reset session state for new input');
-
-          // Process queued prompts after completion
-          if (queuedPromptsRef.current.length > 0) {
-            const [nextPrompt, ...remainingPrompts] = queuedPromptsRef.current;
-            setQueuedPrompts(remainingPrompts);
-
-            // Small delay to ensure UI updates
-            setTimeout(() => {
-              handleSendPrompt(nextPrompt.prompt, nextPrompt.model);
-            }, 100);
-          }
-        };
-
-        // Track if we've recorded the prompt for new sessions
-        let hasRecordedPrompt = recordedPromptIndex >= 0;
-
-        // ====================================================================
-        // Generic Listeners (Catch-all) - FIXED to prevent cross-session data leakage
-        // ====================================================================
-        const genericOutputUnlisten = await listen<string>('claude-output', async (event) => {
-          // 🔧 CRITICAL FIX: 只在尚未收到会话ID时处理全局事件
-          if (!hasActiveSessionRef.current) return;
-
-          // 🔒 CRITICAL FIX: Session Isolation - 严格隔离全局事件处理
-          // 问题: 多个标签页都监听全局 'claude-output',导致消息被多个会话接收
-          // 解决: 只在会话ID未知的早期阶段处理全局事件
-          if (hasAttachedSessionListeners) {
-             try {
-                const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
-                // 只处理新会话的 init 消息(session_id 不同)
-                if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id && msg.session_id !== currentSessionId) {
-                   console.log('[usePromptExecution] Detected NEW session_id from generic listener:', msg.session_id);
-                   // Fall through to processing below
-                } else {
-                   // ⚠️ 忽略所有其他消息 - 应该由会话特定监听器处理
-                   console.log('[usePromptExecution] Ignoring global claude-output (session-specific listener active)');
-                   return;
-                }
-             } catch {
-                return;
-             }
-          }
-
-          // Attempt to extract session_id on the fly (for the very first init)
-          try {
-            const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
-            
-            // Always process the message if we haven't established a session yet
-            // Or if it is the init message
-            handleStreamMessage(event.payload, userInputTranslation || undefined);
-
-            if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-              if (!currentSessionId || currentSessionId !== msg.session_id) {
-                console.log('[usePromptExecution] Detected new session_id from generic listener:', msg.session_id);
-                currentSessionId = msg.session_id;
-                setClaudeSessionId(msg.session_id);
-
-                // If we haven't extracted session info before, do it now
-                if (!extractedSessionInfo) {
-                  const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-                  setExtractedSessionInfo({ sessionId: msg.session_id, projectId, engine: 'claude' });
-                }
-
-                // Record prompt after system:init (user message already written to JSONL)
-                if (!hasRecordedPrompt && isUserInitiated) {
-                  const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-                  // 🔧 FIX: Store Promise to allow processComplete to wait for it
-                  pendingClaudePromptRecordingPromise = (async () => {
-                    try {
-                      // Delay 200ms to ensure file is written
-                      await new Promise(resolve => setTimeout(resolve, 200));
-
-                      recordedPromptIndex = await api.recordPromptSent(
-                        msg.session_id,
-                        projectId,
-                        projectPath,
-                        prompt
-                      );
-                      hasRecordedPrompt = true;
-                      console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(after system:init)');
-                    } catch (err) {
-                      console.error('[Prompt Revert] [ERROR] Failed to record prompt:', err);
-                    }
-                  })();
-                }
-
-                // Switch to session-specific listeners
-                await attachSessionSpecificListeners(msg.session_id);
-              }
-            }
-            
-            // Record after first user message (user message already written to JSONL)
-            // This ensures backend can correctly read and calculate index
-            if (msg.type === 'user' && !hasRecordedPrompt && isUserInitiated && currentSessionId) {
-              // 检查这是否是我们发送的那条消息（通过内容匹配）
-              let isOurMessage = false;
-              const msgContent: any = msg.message?.content;
-              
-              if (msgContent) {
-                if (typeof msgContent === 'string') {
-                  const contentStr = msgContent as string;
-                  isOurMessage = contentStr.includes(prompt) || prompt.includes(contentStr);
-                } else if (Array.isArray(msgContent)) {
-                  const textContent = msgContent
-                    .filter((item: any) => item.type === 'text')
-                    .map((item: any) => item.text)
-                    .join('');
-                  isOurMessage = textContent.includes(prompt) || prompt.includes(textContent);
-                }
-              }
-              
-              if (isOurMessage) {
-                const projectId = extractedSessionInfo?.projectId || projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-                // 🔧 FIX: Store Promise to allow processComplete to wait for it
-                pendingClaudePromptRecordingPromise = (async () => {
-                  try {
-                    // 添加延迟以确保文件写入完成
-                    await new Promise(resolve => setTimeout(resolve, 100));
-
-                    recordedPromptIndex = await api.recordPromptSent(
-                      currentSessionId,
-                      projectId,
-                      projectPath,
-                      prompt
-                    );
-                    hasRecordedPrompt = true;
-                    console.log('[Prompt Revert] [OK] Recorded user prompt #', recordedPromptIndex, '(after user message in JSONL)');
-                  } catch (err) {
-                    console.error('[Prompt Revert] [ERROR] Failed to record prompt:', err);
-                  }
-                })();
-              }
-            }
-          } catch {
-            /* ignore parse errors */
-          }
-        });
-
-        const genericErrorUnlisten = await listen<string>('claude-error', (evt) => {
-          // 🔧 FIX: Only process if this tab has an active session
-          if (!hasActiveSessionRef.current) return;
-          console.error('Claude error:', evt.payload);
-          setError(evt.payload);
-        });
-
-        const genericCompleteUnlisten = await listen<boolean>('claude-complete', (evt) => {
-          // 🔧 FIX: Only process if this tab has an active session
-          if (!hasActiveSessionRef.current) return;
-          console.log('[usePromptExecution] Received claude-complete (generic):', evt.payload);
-          processComplete();
-        });
-
-        // Store the generic unlisteners for now; they may be replaced later.
-        unlistenRefs.current = [genericOutputUnlisten, genericErrorUnlisten, genericCompleteUnlisten];
+          // Store the generic unlisteners for now; they may be replaced later.
+          unlistenRefs.current = [genericOutputUnlisten, genericErrorUnlisten, genericCompleteUnlisten];
 
         } // End of Claude Code event listener setup
 
