@@ -541,7 +541,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <TabsTrigger value="hooks">钩子</TabsTrigger>
                 <TabsTrigger value="translation">翻译</TabsTrigger>
                 <TabsTrigger value="prompt-api">提示词API</TabsTrigger>
-                <TabsTrigger value="provider">代理商</TabsTrigger>
+                {/* <TabsTrigger value="provider">代理商</TabsTrigger> */}
                 <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
               </TabsList>
 
