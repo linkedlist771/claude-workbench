@@ -13,20 +13,20 @@ jobs:
   build:
     strategy:
       fail-fast: false
-        matrix:
-          include:
-            - os: ubuntu-22.04
-              target: linux
-              rust-target: x86_64-unknown-linux-gnu
-            - os: macos-latest
-              target: macos
-              rust-target: x86_64-apple-darwin
-            - os: macos-latest
-              target: macos-arm
-              rust-target: aarch64-apple-darwin
-            - os: windows-latest
-              target: windows
-              rust-target: x86_64-pc-windows-msvc
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux
+            rust-target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: macos
+            rust-target: x86_64-apple-darwin
+          - os: macos-latest
+            target: macos-arm
+            rust-target: aarch64-apple-darwin
+          - os: windows-latest
+            target: windows
+            rust-target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
 
