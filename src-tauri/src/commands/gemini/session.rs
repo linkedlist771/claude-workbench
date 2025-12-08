@@ -162,14 +162,69 @@ pub async fn execute_gemini(
 
     // Apply shared Claude settings env first, then Gemini-specific overrides
     let shared_env = load_shared_env_from_settings();
-    for (key, value) in shared_env {
-        cmd.env(&key, &value);
+    log::info!("[execute_gemini] Applying {} shared environment variables from settings.json", shared_env.len());
+    for (key, value) in &shared_env {
+        // Mask sensitive values
+        let masked = if key.contains("KEY") || key.contains("TOKEN") {
+            format!("{}...", value.chars().take(8).collect::<String>())
+        } else {
+            value.clone()
+        };
+        log::info!("[execute_gemini] Setting env: {} = {}", key, masked);
+        cmd.env(key, value);
     }
 
     // Set environment variables from config (overrides shared if same key)
     let env_vars = build_gemini_env(&config);
-    for (key, value) in env_vars {
-        cmd.env(&key, &value);
+    log::info!("[execute_gemini] Applying {} Gemini-specific environment variables", env_vars.len());
+    for (key, value) in &env_vars {
+        cmd.env(key, value);
+    }
+
+    // Ensure API key and base URL are applied (priority: env_vars -> shared_env)
+    let mut applied_key: Option<String> = None;
+    let mut applied_base: Option<String> = None;
+
+    if let Some(key) = env_vars
+        .get("GEMINI_API_KEY")
+        .or_else(|| env_vars.get("GOOGLE_API_KEY"))
+        .or_else(|| shared_env.get("GEMINI_API_KEY"))
+        .or_else(|| shared_env.get("GOOGLE_API_KEY"))
+    {
+        cmd.env("GEMINI_API_KEY", key);
+        cmd.env("GOOGLE_API_KEY", key);
+        applied_key = Some(key.clone());
+    }
+
+    if let Some(base) = env_vars
+        .get("GEMINI_BASE_URL")
+        .or_else(|| env_vars.get("GOOGLE_GEMINI_BASE_URL"))
+        .or_else(|| shared_env.get("GEMINI_BASE_URL"))
+        .or_else(|| shared_env.get("GOOGLE_GEMINI_BASE_URL"))
+        .or_else(|| shared_env.get("GOOGLE_GENAI_API_BASE"))
+    {
+        cmd.env("GEMINI_BASE_URL", base);
+        cmd.env("GOOGLE_GEMINI_BASE_URL", base);
+        cmd.env("GOOGLE_GENAI_API_BASE", base);
+        applied_base = Some(base.clone());
+    } else {
+        // Default fallback
+        let default_base = "https://cc.585dg.com";
+        cmd.env("GEMINI_BASE_URL", default_base);
+        cmd.env("GOOGLE_GEMINI_BASE_URL", default_base);
+        cmd.env("GOOGLE_GENAI_API_BASE", default_base);
+        applied_base = Some(default_base.to_string());
+    }
+
+    if let Some(ref key) = applied_key {
+        let preview = if key.len() > 8 { format!("{}...{}", &key[..4], &key[key.len()-4..]) } else { key.clone() };
+        log::info!("[execute_gemini] Using API key (masked): {}", preview);
+    } else {
+        log::info!("[execute_gemini] No API key applied");
+    }
+
+    if let Some(ref base) = applied_base {
+        log::info!("[execute_gemini] Using GEMINI_BASE_URL/GOOGLE_GEMINI_BASE_URL: {}", base);
     }
 
     // Execute process with prompt via stdin

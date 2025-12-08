@@ -72,6 +72,7 @@ interface UsePromptExecutionConfig {
   executionEngine?: 'claude' | 'codex' | 'gemini'; // 执行引擎选择 (默认: 'claude')
   codexMode?: CodexExecutionMode;       // Codex 执行模式
   codexModel?: string;                  // Codex 模型 (e.g., 'gpt-5.1-codex-max')
+  codexApiKey?: string;                 // Codex API Key（可选，覆盖 CLI 默认配置）
   geminiModel?: string;                 // Gemini 模型 (e.g., 'gemini-2.5-pro')
   geminiApprovalMode?: 'auto_edit' | 'yolo' | 'default'; // Gemini 审批模式
 
@@ -118,6 +119,7 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
     executionEngine = 'claude', // 🆕 默认使用 Claude Code
     codexMode = 'read-only',     // 🆕 Codex 默认只读模式
     codexModel,                  // 🆕 Codex 模型
+    codexApiKey,                 // 🆕 Codex API Key（可选）
     geminiModel,                 // 🆕 Gemini 模型
     geminiApprovalMode,          // 🆕 Gemini 审批模式
     hasActiveSessionRef,
@@ -1296,7 +1298,8 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
               prompt: processedPrompt,
               mode: codexMode || 'read-only',
               model: codexModel || model,
-              json: true
+              json: true,
+              apiKey: codexApiKey
             });
           } catch (resumeError) {
             // Fallback to resume last if specific resume fails
@@ -1305,7 +1308,8 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
               prompt: processedPrompt,
               mode: codexMode || 'read-only',
               model: codexModel || model,
-              json: true
+              json: true,
+              apiKey: codexApiKey
             });
           }
         } else {
@@ -1313,6 +1317,7 @@ export function usePromptExecution(config: UsePromptExecutionConfig): UsePromptE
           setIsFirstPrompt(false);
           await api.executeCodex({
             projectPath,
+            apiKey: codexApiKey,
             prompt: processedPrompt,
             mode: codexMode || 'read-only',
             model: codexModel || model,

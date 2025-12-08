@@ -1276,3 +1276,39 @@ pub async fn test_codex_provider_connection(base_url: String, api_key: Option<St
         }
     }
 }
+
+/// Sync API key to ~/.codex/auth.json
+/// This ensures Codex CLI can use the same API key as configured in settings
+#[tauri::command]
+pub async fn sync_api_key_to_codex_auth(api_key: String) -> Result<String, String> {
+    log::info!("[Codex] Syncing API key to auth.json");
+    
+    let config_dir = get_codex_config_dir()?;
+    let auth_path = get_codex_auth_path()?;
+    
+    // Ensure config directory exists
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create .codex directory: {}", e))?;
+    }
+    
+    // Read existing auth.json or create new
+    let mut auth: serde_json::Map<String, serde_json::Value> = if auth_path.exists() {
+        let content = fs::read_to_string(&auth_path).unwrap_or_default();
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+    
+    // Update OPENAI_API_KEY
+    auth.insert("OPENAI_API_KEY".to_string(), serde_json::Value::String(api_key.clone()));
+    
+    // Write back to auth.json
+    let auth_content = serde_json::to_string_pretty(&auth)
+        .map_err(|e| format!("Failed to serialize auth: {}", e))?;
+    fs::write(&auth_path, auth_content)
+        .map_err(|e| format!("Failed to write auth.json: {}", e))?;
+    
+    log::info!("[Codex] Successfully synced API key to auth.json");
+    Ok("API key synced to Codex auth.json".to_string())
+}

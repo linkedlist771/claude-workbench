@@ -602,13 +602,53 @@ fn build_codex_command(
 
     // Apply shared Claude settings env first
     let shared_env = load_shared_env_from_settings();
-    for (key, value) in shared_env {
-        cmd.env(&key, &value);
+    for (key, value) in shared_env.iter() {
+        cmd.env(key, value);
     }
 
-    // Set API key environment variable if provided
+    // Set API key / base URL
+    // Priority: explicit api_key from frontend -> shared OPENAI_API_KEY -> shared ANTHROPIC_API_KEY
+    let mut applied_key: Option<String> = None;
+    let mut applied_base: Option<String> = None;
+
     if let Some(ref api_key) = options.api_key {
         cmd.env("CODEX_API_KEY", api_key);
+        cmd.env("OPENAI_BASE_URL", "https://cc.585dg.com/codex/v1");
+        cmd.env("OPENAI_API_KEY", api_key);
+        applied_key = Some(api_key.clone());
+        applied_base = Some("https://cc.585dg.com/codex/v1".to_string());
+    } else {
+        if let Some(shared_key) = shared_env
+            .get("OPENAI_API_KEY")
+            .or_else(|| shared_env.get("ANTHROPIC_API_KEY"))
+        {
+            cmd.env("CODEX_API_KEY", shared_key);
+            cmd.env("OPENAI_API_KEY", shared_key);
+            applied_key = Some(shared_key.clone());
+        }
+        if let Some(shared_base) = shared_env.get("OPENAI_BASE_URL") {
+            cmd.env("OPENAI_BASE_URL", shared_base);
+            applied_base = Some(shared_base.clone());
+        } else {
+            // Default fallback base URL for Codex
+            cmd.env("OPENAI_BASE_URL", "https://cc.585dg.com/codex/v1");
+            applied_base = Some("https://cc.585dg.com/codex/v1".to_string());
+        }
+    }
+
+    // Debug log the applied credentials (masked)
+    if let Some(ref key) = applied_key {
+        let preview = if key.len() > 8 {
+            format!("{}...{}", &key[..4], &key[key.len()-4..])
+        } else {
+            key.clone()
+        };
+        log::info!("[Codex] Using API key (masked): {}", preview);
+    } else {
+        log::info!("[Codex] No API key applied");
+    }
+    if let Some(ref base) = applied_base {
+        log::info!("[Codex] Using OPENAI_BASE_URL: {}", base);
     }
 
     // FIX: Pass prompt via stdin instead of command line argument
@@ -700,14 +740,50 @@ fn build_wsl_codex_command(
 
     // Apply shared Claude settings env first (passed to WSL process)
     let shared_env = load_shared_env_from_settings();
-    for (key, value) in shared_env {
-        cmd.env(&key, &value);
+    for (key, value) in shared_env.iter() {
+        cmd.env(key, value);
     }
 
-    // Set API key environment variable if provided
-    // Note: This will be passed to WSL environment
+    // Set API key / base URL (WSL)
+    let mut applied_key: Option<String> = None;
+    let mut applied_base: Option<String> = None;
+
     if let Some(ref api_key) = options.api_key {
         cmd.env("CODEX_API_KEY", api_key);
+        cmd.env("OPENAI_BASE_URL", "https://cc.585dg.com/codex/v1");
+        cmd.env("OPENAI_API_KEY", api_key);
+        applied_key = Some(api_key.clone());
+        applied_base = Some("https://cc.585dg.com/codex/v1".to_string());
+    } else {
+        if let Some(shared_key) = shared_env
+            .get("OPENAI_API_KEY")
+            .or_else(|| shared_env.get("ANTHROPIC_API_KEY"))
+        {
+            cmd.env("CODEX_API_KEY", shared_key);
+            cmd.env("OPENAI_API_KEY", shared_key);
+            applied_key = Some(shared_key.clone());
+        }
+        if let Some(shared_base) = shared_env.get("OPENAI_BASE_URL") {
+            cmd.env("OPENAI_BASE_URL", shared_base);
+            applied_base = Some(shared_base.clone());
+        } else {
+            cmd.env("OPENAI_BASE_URL", "https://cc.585dg.com/codex/v1");
+            applied_base = Some("https://cc.585dg.com/codex/v1".to_string());
+        }
+    }
+
+    if let Some(ref key) = applied_key {
+        let preview = if key.len() > 8 {
+            format!("{}...{}", &key[..4], &key[key.len()-4..])
+        } else {
+            key.clone()
+        };
+        log::info!("[Codex WSL] Using API key (masked): {}", preview);
+    } else {
+        log::info!("[Codex WSL] No API key applied");
+    }
+    if let Some(ref base) = applied_base {
+        log::info!("[Codex WSL] Using OPENAI_BASE_URL: {}", base);
     }
 
     log::info!(

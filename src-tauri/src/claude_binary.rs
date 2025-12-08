@@ -2122,24 +2122,56 @@ pub fn create_command_with_env(program: &str) -> Command {
 /// Load shared environment variables from ~/.claude/settings.json (env section).
 /// Used by multiple providers (Claude, Codex, Gemini) to apply user-defined env.
 pub fn load_shared_env_from_settings() -> HashMap<String, String> {
+    use log::{info, warn, error};
+    
     let mut env_map = HashMap::new();
 
-    if let Ok(claude_dir) = crate::commands::claude::get_claude_dir() {
-        let settings_path = claude_dir.join("settings.json");
-        if settings_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&settings_path) {
-                if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
-                        for (key, value) in env_obj {
-                            if let Some(value_str) = value.as_str() {
-                                env_map.insert(key.clone(), value_str.to_string());
+    match crate::commands::claude::get_claude_dir() {
+        Ok(claude_dir) => {
+            let settings_path = claude_dir.join("settings.json");
+            info!("[load_shared_env] Looking for settings at: {:?}", settings_path);
+            
+            if settings_path.exists() {
+                match std::fs::read_to_string(&settings_path) {
+                    Ok(content) => {
+                        match serde_json::from_str::<serde_json::Value>(&content) {
+                            Ok(settings) => {
+                                if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
+                                    info!("[load_shared_env] Found {} environment variables in settings.json", env_obj.len());
+                                    for (key, value) in env_obj {
+                                        if let Some(value_str) = value.as_str() {
+                                            // Mask sensitive values in logs
+                                            let masked_value = if key.contains("KEY") || key.contains("TOKEN") || key.contains("SECRET") {
+                                                format!("{}...", &value_str.chars().take(8).collect::<String>())
+                                            } else {
+                                                value_str.to_string()
+                                            };
+                                            info!("[load_shared_env] Loading env: {} = {}", key, masked_value);
+                                            env_map.insert(key.clone(), value_str.to_string());
+                                        }
+                                    }
+                                } else {
+                                    warn!("[load_shared_env] No 'env' section found in settings.json");
+                                }
+                            }
+                            Err(e) => {
+                                error!("[load_shared_env] Failed to parse settings.json: {}", e);
                             }
                         }
                     }
+                    Err(e) => {
+                        error!("[load_shared_env] Failed to read settings.json: {}", e);
+                    }
                 }
+            } else {
+                warn!("[load_shared_env] settings.json does not exist at: {:?}", settings_path);
             }
+        }
+        Err(e) => {
+            error!("[load_shared_env] Failed to get claude dir: {}", e);
         }
     }
 
+    info!("[load_shared_env] Returning {} environment variables", env_map.len());
     env_map
 }

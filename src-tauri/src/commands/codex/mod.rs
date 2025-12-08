@@ -106,6 +106,7 @@ pub use config::{
     delete_codex_provider_config,
     clear_codex_provider_config,
     test_codex_provider_connection,
+    sync_api_key_to_codex_auth,
 };
 
 // ============================================================================

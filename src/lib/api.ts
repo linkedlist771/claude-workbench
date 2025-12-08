@@ -3162,6 +3162,21 @@ export const api = {
     }
   },
 
+  /**
+   * Sync API key to Codex auth.json
+   * This ensures Codex CLI uses the same API key as configured in settings
+   * @param apiKey - The API key to sync
+   * @returns Promise resolving to success message
+   */
+  async syncApiKeyToCodexAuth(apiKey: string): Promise<string> {
+    try {
+      return await invoke<string>("sync_api_key_to_codex_auth", { apiKey });
+    } catch (error) {
+      console.error("Failed to sync API key to Codex auth:", error);
+      throw error;
+    }
+  },
+
   // ============================================================================
   // GEMINI PROVIDER MANAGEMENT
   // ============================================================================

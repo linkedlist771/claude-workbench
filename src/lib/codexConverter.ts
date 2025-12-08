@@ -154,8 +154,12 @@ export class CodexEventConverter {
           this.itemMap.set(event.item.id, event.item);
           return this.convertItem(event.item, 'completed', event.timestamp);
 
-        case 'error':
-          return this.createErrorMessage(event.error.message, event.timestamp);
+        case 'error': {
+          // Some Codex errors are surfaced as { type: "error", message: "..."}
+          // while others are { type: "error", error: { message: "..." } }
+          const msg = (event as any)?.error?.message || (event as any)?.message || 'Unknown Codex error';
+          return this.createErrorMessage(msg, event.timestamp);
+        }
 
         case 'session_meta':
           // Return init message

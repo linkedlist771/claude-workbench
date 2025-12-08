@@ -112,11 +112,27 @@ export const Settings: React.FC<SettingsProps> = ({
   // Provider sub-tabs state
   const [providerSubTab, setProviderSubTab] = useState("claude");
 
+  // Track if initial settings sync is needed
+  const [needsInitialSync, setNeedsInitialSync] = useState(false);
+
   // 挂载时加载设置
   // Load settings on mount
   useEffect(() => {
     loadSettings();
   }, []);
+
+  // 在设置加载完成后自动保存，确保所有环境变量被同步
+  // Auto-save settings after initial load to sync all env vars
+  useEffect(() => {
+    if (needsInitialSync && settings && envVars.length > 0 && !loading) {
+      console.log('[Settings] Triggering initial sync save...');
+      setNeedsInitialSync(false);
+      // Use setTimeout to avoid blocking the UI
+      setTimeout(() => {
+        saveSettings();
+      }, 100);
+    }
+  }, [needsInitialSync, settings, envVars, loading]);
 
   /**
    * Loads the current Claude settings
@@ -184,6 +200,9 @@ export const Settings: React.FC<SettingsProps> = ({
             enabled: true, // 默认启用所有现有的环境变量
           }))
         );
+
+        // 标记需要初始化同步，将在 useEffect 中触发完整的 saveSettings
+        setNeedsInitialSync(true);
       } else {
         // 如果没有环境变量，也要添加固定的 ANTHROPIC_BASE_URL
         setEnvVars([{
@@ -192,6 +211,8 @@ export const Settings: React.FC<SettingsProps> = ({
           value: 'https://cc.585dg.com',
           enabled: true,
         }]);
+        // 同样需要同步
+        setNeedsInitialSync(true);
       }
 
     } catch (err) {
@@ -234,6 +255,8 @@ export const Settings: React.FC<SettingsProps> = ({
         envMap["ANTHROPIC_BASE_URL"] = defaultBaseUrl;
         envMap["OPENAI_BASE_URL"] = `${defaultBaseUrl}/codex/v1`;
         envMap["GEMINI_BASE_URL"] = defaultBaseUrl;
+        // GOOGLE_GENAI_API_BASE
+        envMap["GOOGLE_GENAI_API_BASE"] = defaultBaseUrl;
 
         return envMap;
       };
@@ -264,8 +287,44 @@ export const Settings: React.FC<SettingsProps> = ({
         },
       };
 
+      // 预填充 Codex 执行配置中的 API Key（仅在未显式设置 codexApiKey 时填充）
+      try {
+        const unifiedApiKey =
+          updatedSettings.env?.OPENAI_API_KEY ||
+          updatedSettings.env?.ANTHROPIC_API_KEY ||
+          updatedSettings.env?.GEMINI_API_KEY;
+
+        if (unifiedApiKey) {
+          const stored = localStorage.getItem('execution_engine_config');
+          const parsed = stored ? JSON.parse(stored) : {};
+          if (!parsed.codexApiKey) {
+            const nextConfig = { ...parsed, codexApiKey: unifiedApiKey };
+            localStorage.setItem('execution_engine_config', JSON.stringify(nextConfig));
+            console.log('[Settings] Prefilled codexApiKey from synced env', {
+              source: unifiedApiKey ? 'env_sync' : 'none',
+              codexApiKeyPreview: unifiedApiKey ? `${unifiedApiKey.slice(0, 4)}...${unifiedApiKey.slice(-4)}` : undefined,
+            });
+          }
+        }
+      } catch (prefillErr) {
+        console.warn('[Settings] Failed to prefill codexApiKey:', prefillErr);
+      }
+
       await api.saveClaudeSettings(updatedSettings);
       setSettings(updatedSettings);
+
+      // Sync API key to Codex auth.json (~/.codex/auth.json)
+      // This ensures Codex CLI uses the same API key as configured in settings
+      const apiKey = updatedSettings.env?.OPENAI_API_KEY || updatedSettings.env?.ANTHROPIC_API_KEY;
+      if (apiKey) {
+        try {
+          await api.syncApiKeyToCodexAuth(apiKey);
+          console.log('[Settings] Synced API key to Codex auth.json');
+        } catch (syncErr) {
+          console.error('[Settings] Failed to sync API key to Codex auth.json:', syncErr);
+          // Don't block save on sync failure
+        }
+      }
 
       // Save execution config if changed
       if (executionConfig) {

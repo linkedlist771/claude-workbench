@@ -84,7 +84,7 @@ use commands::codex::{
     // Codex provider management
     get_codex_provider_presets, get_current_codex_config, switch_codex_provider,
     add_codex_provider_config, update_codex_provider_config, delete_codex_provider_config,
-    clear_codex_provider_config, test_codex_provider_connection,
+    clear_codex_provider_config, test_codex_provider_connection, sync_api_key_to_codex_auth,
     // Session conversion
     convert_session, convert_claude_to_codex, convert_codex_to_claude,
     CodexProcessState,
@@ -403,6 +403,7 @@ fn main() {
             delete_codex_provider_config,
             clear_codex_provider_config,
             test_codex_provider_connection,
+            sync_api_key_to_codex_auth,
             // Session Conversion (Claude ↔ Codex)
             convert_session,
             convert_claude_to_codex,
