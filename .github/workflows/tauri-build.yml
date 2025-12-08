@@ -74,11 +74,22 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # 删除锁文件，让 bun 重新解析依赖以获取正确的平台特定包
+      - name: Clean lockfiles (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          rm -f package-lock.json
+          rm -f bun.lock
+
+      - name: Clean lockfiles (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue package-lock.json
+          Remove-Item -Force -ErrorAction SilentlyContinue bun.lock
+
       - name: Install frontend dependencies
         run: bun install
-
-      - name: Build frontend
-        run: bun run build
 
       - name: Build Tauri app
         run: bun run tauri:build -- --target ${{ matrix.rust-target }}
