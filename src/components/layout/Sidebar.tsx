@@ -142,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
     >
       {/* Logo 区域 (Removed) */}
-      
+
       {/* 主导航区域 */}
       <div className={cn("flex-1 flex flex-col w-full", isExpanded ? "space-y-1" : "items-center space-y-2")}>
         {mainNavItems.map((item) => (
@@ -190,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </Tooltip>
           </TooltipProvider>
 
-          {onAboutClick && (
+          {/* {onAboutClick && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -211,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </Tooltip>
             </TooltipProvider>
-          )}
+          )} */}
         </div>
 
         {/* 设置和展开/收起按钮 */}
