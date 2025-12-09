@@ -10,7 +10,6 @@ import {
   FileCode,
   ChevronLeft,
   ChevronRight,
-  HelpCircle,
   Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -48,7 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onNavigate,
   className,
-  onAboutClick,
+  // onAboutClick,
   onUpdateClick
 }) => {
   const { t } = useTranslation();
